@@ -1,0 +1,63 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+*.env
+
+# Conda environments (보통 안 들어오는데 혹시 모를 경우)
+conda-env/
+
+# Thermo vendor DLL 폴더 - 폴더는 유지, 내용은 무시
+dlls/thermo_fisher/*
+!dlls/thermo_fisher/.gitkeep
+
+# 테스트 데이터 무시
+tests/
+
+# 테스트용 대용량 MS 데이터 파일은 웬만하면 제외
+*.raw
+*.wiff
+*.wiff.scan
+*.d
+*.mzML
+*.mzml
+*.mgf
+*.mzXML
+*.bbmz
+
+# Jupyter
+*.ipynb
+# .ipynb_checkpoints/
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+htmlcov/
+.coverage
+
+# Logs
+logs/
+*.log
+
+
+# OS별 잡파일
+.DS_Store
+Thumbs.db
+
+# 보안 관련
+*.pem
+*.key
+*.crt
+*.pfx
+.env
+.env.*
