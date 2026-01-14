@@ -1,18 +1,45 @@
 import os
 from tqdm import trange
 from pathlib import Path
-from collections import defaultdict
 
 import numpy as np
+import numba as nb
 import polars as pl
 from pathlib import Path
 from typing import Sequence, Union, List, Iterator
 
-from readers.base import MassSpecFileReader, MassSpecData
+from pymsio.readers.base import MassSpecFileReader, MassSpecData
 
-dll_dir = Path(os.path.join(os.path.dirname(os.path.dirname(__file__)), "dlls"))
-if not dll_dir.exists():
-    raise ValueError(f"Thermo DLL directory not found: {dll_dir}")
+ENV_DLL_DIR = "PYMSIO_THERMO_DLL_DIR"
+REQUIRED_DLLS = [
+    "ThermoFisher.CommonCore.Data.dll",
+    "ThermoFisher.CommonCore.RawFileReader.dll",
+]
+
+
+def find_thermo_dll_dir() -> Path:
+    candidates = []
+
+    env = os.getenv(ENV_DLL_DIR)
+    if env:
+        candidates.append(Path(env))
+
+    # candidates.append(Path.home() / ".pymsio" / "thermo_fisher")
+    candidates.append(Path.cwd() / "dlls" / "thermo_fisher")
+
+    print(candidates)
+
+    for d in candidates:
+        if d and d.is_dir() and all((d / f).exists() for f in REQUIRED_DLLS):
+            return d
+
+    raise FileNotFoundError(
+        "Thermo DLLs not found. Please copy required DLLs to one of:\n"
+        f"- {Path.cwd() / "dlls" / "thermo_fisher"}\n"
+        f"- <set {ENV_DLL_DIR}>\n"
+        "- ./dlls/thermo_fisher\n"
+        "Required:\n- " + "\n- ".join(REQUIRED_DLLS)
+    )
 
 try:
     import clr
@@ -20,11 +47,13 @@ try:
     clr.AddReference("System")
     import System
 
-    from utils.util import DotNetArrayToNPArray 
+    from pymsio.utils.util import DotNetArrayToNPArray 
 
-    # DLL 로드
-    clr.AddReference(os.path.join(dll_dir, "thermo_fisher/ThermoFisher.CommonCore.Data.dll"))
-    clr.AddReference(os.path.join(dll_dir, "thermo_fisher/ThermoFisher.CommonCore.RawFileReader.dll"))
+    dll_dir = find_thermo_dll_dir()
+    print(dll_dir)
+
+    for filename in REQUIRED_DLLS:
+        clr.AddReference(os.path.join(dll_dir, filename))
 
     import ThermoFisher
     from ThermoFisher.CommonCore.RawFileReader import RawFileReaderAdapter
@@ -32,9 +61,7 @@ try:
 
     LOADED_DLL = True
 except Exception:
-    # warning
     LOADED_DLL = False
-    print("Warning")
 
 
 def _parse_mono_and_charge(trailer_data):
@@ -65,9 +92,44 @@ def _parse_mono_and_charge(trailer_data):
 
     return mono_mz, charge
 
+@nb.njit(cache=True, fastmath=True)
+def fast_process_peaks(mz_arr, int_arr):
+
+    if mz_arr is None or int_arr is None:
+        return np.empty((0, 2), dtype=np.float32)
+
+    """Ultra-fast Numba JIT compiled version - very clean and fast code."""
+    # Input validation
+    if mz_arr.size == 0 or int_arr.size == 0:
+        return np.empty((0, 2), dtype=np.float32)
+
+    # Handle size mismatch
+    min_len = min(mz_arr.size, int_arr.size)
+    if min_len == 0:
+        return np.empty((0, 2), dtype=np.float32)
+
+    # Count valid peaks (JIT makes this loop very fast)
+    valid_count = 0
+    for i in range(min_len):
+        if int_arr[i] > 0:
+            valid_count += 1
+
+    if valid_count == 0:
+        return np.empty((0, 2), dtype=np.float32)
+
+    # Extract valid peaks (simple and fast with JIT)
+    result = np.empty((valid_count, 2), dtype=np.float32)
+    idx = 0
+    for i in range(min_len):
+        if int_arr[i] > 0:
+            result[idx, 0] = np.float32(mz_arr[i])
+            result[idx, 1] = np.float32(int_arr[i])
+            idx += 1
+
+    return result
 
 class ThermoRawReader(MassSpecFileReader):
-    thread_safe = False  # 그냥 BMSIOReader랑 맞춰줌 (필요시 True/False 조정)
+    thread_safe = False
 
     def __init__(self, 
                 filepath: Union[str, Path],
@@ -77,7 +139,6 @@ class ThermoRawReader(MassSpecFileReader):
         if not LOADED_DLL:
             raise ValueError("ERROR DLL import")
         
-        # MassSpecFileReader 쪽 공통 초기화 (run_name, file_path 등)
         super().__init__(filepath, num_workers)
         
         self.centroided = centroided
@@ -90,7 +151,6 @@ class ThermoRawReader(MassSpecFileReader):
         self._meta_df: pl.DataFrame | None = None
 
     def close(self):
-        # CommonCore RawFileReader는 Dispose 지원 → 있으면 호출
         if self._raw is not None:
             self._raw.Dispose()
             self._raw = None
@@ -133,9 +193,6 @@ class ThermoRawReader(MassSpecFileReader):
             data = self._raw.GetSimplifiedScan(frame_num)  # ISimpleScanAccess
             mz_arr = DotNetArrayToNPArray(data.Masses)
             inten_arr = DotNetArrayToNPArray(data.Intensities)
-
-        mz_arr = mz_arr.astype(np.float32, copy=False)
-        inten_arr = inten_arr.astype(np.float32, copy=False)
 
         return mz_arr, inten_arr
     
@@ -192,7 +249,6 @@ class ThermoRawReader(MassSpecFileReader):
                     isolation_min_mz = isolation_center - isolation_width / 2.0
                     isolation_max_mz = isolation_center + isolation_width / 2.0
             
-            
             mz_lo = float(scan_stats.LowMass)
             mz_hi = float(scan_stats.HighMass)
 
@@ -201,11 +257,8 @@ class ThermoRawReader(MassSpecFileReader):
                     "frame_num": frame_num,
                     "time_in_seconds": rt * 60,
                     "ms_level": ms_level,
-                    # "precursor_mz": precursor_mz,
-                    # "precursor_charge": precursor_charge,
                     "isolation_min_mz": isolation_min_mz,
                     "isolation_max_mz": isolation_max_mz,
-                    # "nce": nce,
                     "mz_lo": mz_lo,
                     "mz_hi": mz_hi,
                 }
@@ -213,7 +266,6 @@ class ThermoRawReader(MassSpecFileReader):
 
         meta_df = pl.DataFrame(rows)
 
-        # META_SCHEMA 에 맞게 캐스팅
         meta_df = meta_df.with_columns(
             [
                 pl.col("frame_num").cast(pl.UInt32),
@@ -226,13 +278,12 @@ class ThermoRawReader(MassSpecFileReader):
             ]
         )
 
-        # frame_num 이 이미 컬럼에 있으니 따로 index 설정은 필요 없음.
         self._meta_df = meta_df
         return meta_df
     
     def get_frame(self, frame_num: int) -> np.ndarray:
         mz_arr, inten_arr = self._read_peaks_arrays(frame_num)
-        return np.column_stack([mz_arr, inten_arr]).astype(np.float32)
+        return fast_process_peaks(mz_arr, inten_arr)
     
     def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
         return list(self.iter_frames(frame_nums, desc="Reading Thermo frames"))

@@ -1,7 +1,7 @@
 from pathlib import Path
 import argparse
 
-from readers import ReaderFactory 
+from pymsio.readers import ReaderFactory 
 
 def main():
     parser = argparse.ArgumentParser(
@@ -19,15 +19,18 @@ def main():
     print("=== meta_df ===")
     print(meta_df.head())
 
-    peak_arr = reader.get_frames(list(range(meta_df["frame_num"].min(), meta_df["frame_num"].max()+1)))            # numpy ndarray (N x 2 or N x ?)
-    # peak_arr = reader.get_frames(frame_nums=[1,3,10])  
+    # peak_arr = reader.get_frames(list(range(meta_df["frame_num"].min(), meta_df["frame_num"].max()+1)))            # numpy ndarray (N x 2 or N x ?)
+    # # peak_arr = reader.get_frames(frame_nums=[1,3,10])  
 
-    print("\n=== peaks ===")
-    print("peak_arr[0] shape:", peak_arr[0].shape)
-    print("col 0=m/z\t1=intensity")
-    print(peak_arr[0])
+    # print("\n=== peaks ===")
+    # print("peak_arr[0] shape:", peak_arr[0].shape)
+    # print("col 0=m/z\t1=intensity")
+    # print(peak_arr[0])
 
-    peak_arr_1 = reader.get_frame(frame_num=1) 
+    # peak_arr_1 = reader.get_frame(frame_num=1)
+    
+    msdata = reader.load()
+    print(msdata.peak_arr.shape)
 
 
 if __name__ == "__main__":

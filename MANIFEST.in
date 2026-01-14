@@ -1,0 +1,17 @@
+include pyproject.toml
+include README.md
+# include LICENSE
+
+# 개발/테스트/노트북 제외
+exclude requirements.txt
+exclude run.py
+exclude install_mono.sh
+exclude pat.txt
+recursive-exclude tests *
+recursive-exclude *.ipynb *
+
+# 벤더/바이너리 제외
+recursive-exclude dlls *
+recursive-exclude * *.dll
+recursive-exclude * *.so
+recursive-exclude * *.dylib

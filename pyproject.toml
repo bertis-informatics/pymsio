@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pymsio"                 # PyPI에서 유일해야 함
+version = "0.1.2"               # 업로드할 때마다 반드시 증가
+description = "MS I/O readers with optional vendor bindings"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+# license-files = ["LICENSE*"]
+
+authors = [
+  { name = "Youngmin Park", email = "youngmin.park@bertis.com" }
+]
+
+dependencies = [
+  "pythonnet==3.0.5",
+  "numba",
+  "numpy",
+  "pandas",
+  "tqdm",
+  "polars",
+  "lxml",
+  "isal",
+]
+
+# [project.urls]
+# Repository = "https://github.com/bertis-informatics/pymsio"
+# Issues = "https://github.com/bertis-informatics/pymsio/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pymsio*"]
+exclude = ["tests*"]

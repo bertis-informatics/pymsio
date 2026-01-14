@@ -26,7 +26,7 @@ import numpy as np
 import numba as nb
 import polars as pl
 
-from readers.base import MassSpecFileReader, MassSpecData, META_SCHEMA
+from pymsio.readers.base import MassSpecFileReader, MassSpecData, META_SCHEMA
 
 
 # MS ontology accession codes as constants for faster lookup

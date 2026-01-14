@@ -1,4 +1,7 @@
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import clr
@@ -8,8 +11,12 @@ try:
     import ctypes
 
     from System.Runtime.InteropServices import GCHandle, GCHandleType
-except Exception:
-    print("warning")
+except Exception as e:
+    logger.exception(
+        "pythonnet/.NET runtime import failed. "
+        f"Optional dependency unavailable: pythonnet/.NET import failed ({type(e).__name__}: {e}). "
+        "Thermo RAW reader functionality will be disabled."
+    )
 
 def DotNetArrayToNPArray(src):
     """
@@ -22,7 +29,7 @@ def DotNetArrayToNPArray(src):
         src_ptr = src_hndl.AddrOfPinnedObject().ToInt64()
         bufType = ctypes.c_double * len(src)
         cbuf = bufType.from_address(src_ptr)
-        dest = np.frombuffer(cbuf, dtype=cbuf._type_).copy()
+        dest = np.frombuffer(cbuf, dtype=cbuf._type_).astype(np.float32, copy=True)
         # dest = np.frombuffer(cbuf, dtype=cbuf._type_)
     finally:
         if src_hndl.IsAllocated:

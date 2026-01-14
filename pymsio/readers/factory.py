@@ -34,7 +34,7 @@ class ReaderFactory:
         if ext == ".raw":
             reader = ThermoRawReader(filepath)
         elif ext in (".mzml", ".mzml.gz"):
-            reader = MzmlFileReader(filepath)   # 있으면 그대로
+            reader = MzmlFileReader(filepath)
         else:
             raise ValueError(f"Unsupported file type: {ext}")
 
