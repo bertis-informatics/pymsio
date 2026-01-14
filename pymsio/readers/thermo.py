@@ -27,8 +27,6 @@ def find_thermo_dll_dir() -> Path:
     # candidates.append(Path.home() / ".pymsio" / "thermo_fisher")
     candidates.append(Path.cwd() / "dlls" / "thermo_fisher")
 
-    print(candidates)
-
     for d in candidates:
         if d and d.is_dir() and all((d / f).exists() for f in REQUIRED_DLLS):
             return d
@@ -50,7 +48,6 @@ try:
     from pymsio.utils.util import DotNetArrayToNPArray 
 
     dll_dir = find_thermo_dll_dir()
-    print(dll_dir)
 
     for filename in REQUIRED_DLLS:
         clr.AddReference(os.path.join(dll_dir, filename))
