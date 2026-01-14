@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymsio"                 # PyPI에서 유일해야 함
-version = "0.1.2"               # 업로드할 때마다 반드시 증가
+version = "0.1.4"               # 업로드할 때마다 반드시 증가
 description = "MS I/O readers with optional vendor bindings"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,19 +16,20 @@ authors = [
 ]
 
 dependencies = [
-  "pythonnet==3.0.5",
-  "numba",
+  "pythonnet>=3.0.5",
+  "numba>=0.47",
   "numpy",
   "pandas",
   "tqdm",
   "polars",
   "lxml",
   "isal",
+  "h5py",
 ]
 
-# [project.urls]
-# Repository = "https://github.com/bertis-informatics/pymsio"
-# Issues = "https://github.com/bertis-informatics/pymsio/issues"
+[project.urls]
+Repository = "https://github.com/bertis-informatics/pymsio"
+Issues = "https://github.com/bertis-informatics/pymsio/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
