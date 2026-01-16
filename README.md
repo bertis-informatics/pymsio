@@ -32,29 +32,35 @@ Both formats are exposed through a common interface.
 
 2. **Provide the Thermo DLLs** (only needed for Thermo RAW)
 
-    1. Download (or `git clone`) RawFileReader: https://github.com/thermofisherlsms/RawFileReader
-    2. Copy the two DLLs from `RawFileReader/Libs/Net471/`:
-         - `ThermoFisher.CommonCore.Data.dll`
-         - `ThermoFisher.CommonCore.RawFileReader.dll`
-    3. Make the DLLs discoverable:
-         - **Option A — Bundle DLLs inside the package** `<path-to-pymsio>/pymsio/dlls/thermo_fisher/`
-            - Copy the DLLs into `pymsio/dlls/thermo_fisher/` *before* running `pip install -e .` so they are included in the installation.
-            - Example:
-               ```bash
-               mkdir -p pymsio/dlls/thermo_fisher
-               cp /path/to/RawFileReader/Libs/Net471/*.dll /path/to/pymsio/pymsio/dlls/thermo_fisher/
-               ```
-         - **Option B — Set-up an environment variable** `PYMSIO_THERMO_DLL_DIR`
-            - Windows example:
-               ```powershell
-               setx PYMSIO_THERMO_DLL_DIR "<path-to-your-dll-folder>"
-               ```
-            - Linux example:
-               ```bash
-               export PYMSIO_THERMO_DLL_DIR="<path-to-your-dll-folder>"
-               ```
-               *(Add the export line to `~/.bashrc` to keep it persistent.)*
-            - Copy the two DLLs into the folder referenced by the variable.
+   - **Linux only**: ensure Mono is installed (required by pythonnet). Use the helper script:
+
+     ```bash
+     ./install_mono.sh
+     ```
+
+   1. Download (or `git clone`) RawFileReader: https://github.com/thermofisherlsms/RawFileReader
+   2. Copy the two DLLs from `RawFileReader/Libs/Net471/`:
+      - `ThermoFisher.CommonCore.Data.dll`
+      - `ThermoFisher.CommonCore.RawFileReader.dll`
+   3. Make the DLLs discoverable:
+      - **Option A — Bundle DLLs inside the package** `<path-to-pymsio>/pymsio/dlls/thermo_fisher/`
+        - Copy the DLLs into `pymsio/dlls/thermo_fisher/` *before* running `pip install -e .` so they ship with the installation.
+        - Example:
+          ```bash
+          mkdir -p pymsio/dlls/thermo_fisher
+          cp /path/to/RawFileReader/Libs/Net471/*.dll /path/to/pymsio/pymsio/dlls/thermo_fisher/
+          ```
+      - **Option B — Set up an environment variable** `PYMSIO_THERMO_DLL_DIR`
+        - Windows example:
+          ```powershell
+          setx PYMSIO_THERMO_DLL_DIR "<path-to-your-dll-folder>"
+          ```
+        - Linux example:
+          ```bash
+          export PYMSIO_THERMO_DLL_DIR="<path-to-your-dll-folder>"
+          ```
+          *(Add the export line to `~/.bashrc` to keep it persistent.)*
+        - Copy the DLLs into the folder referenced by the variable.
 
 
 3. **Install pymsio**
