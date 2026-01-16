@@ -18,12 +18,13 @@ except Exception as e:
         "Thermo RAW reader functionality will be disabled."
     )
 
+
 def DotNetArrayToNPArray(src):
     """
     See https://mail.python.org/pipermail/pythondotnet/2014-May/001527.html
     """
     if src is None:
-        return np.array([], dtype=np.float64)
+        return np.array([], dtype=np.float32)
     src_hndl = GCHandle.Alloc(src, GCHandleType.Pinned)
     try:
         src_ptr = src_hndl.AddrOfPinnedObject().ToInt64()
