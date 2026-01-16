@@ -7,13 +7,11 @@ It currently supports:
 - **Thermo RAW** files (via `pythonnet` + Thermo Fisher CommonCore DLLs)
 - **mzML** files
 
-Both formats are exposed through a common interface.
-
 ---
 
 ## Requirements
 
-- **OS**: Windows, Linux (macOS not tested)
+- **OS**: Windows, Linux
 - **Python**: **>= 3.9**
 - **Thermo RAW**: 
    - Requires Thermo Fisher CommonCore DLLs (`ThermoFisher.CommonCore.Data.dll`, `ThermoFisher.CommonCore.RawFileReader.dll`) obtained from the RawFileReader project (https://github.com/thermofisherlsms/RawFileReader). 
@@ -45,10 +43,13 @@ Both formats are exposed through a common interface.
    3. Make the DLLs discoverable:
       - **Option A — Bundle DLLs inside the package** `<path-to-pymsio>/pymsio/dlls/thermo_fisher/`
         - Copy the DLLs into `pymsio/dlls/thermo_fisher/` *before* running `pip install -e .` so they ship with the installation.
-        - Example:
+        - Windows example:
           ```bash
-          mkdir -p pymsio/dlls/thermo_fisher
-          cp /path/to/RawFileReader/Libs/Net471/*.dll /path/to/pymsio/pymsio/dlls/thermo_fisher/
+          copy /path/to/RawFileReader/Libs/Net471/*.CommonCore.*.dll /path/to/pymsio/pymsio/dlls/thermo_fisher/
+          ```
+        - Linux example:
+          ```bash
+          cp /path/to/RawFileReader/Libs/Net471/*.CommonCore.*.dll /path/to/pymsio/pymsio/dlls/thermo_fisher/
           ```
       - **Option B — Set up an environment variable** `PYMSIO_THERMO_DLL_DIR`
         - Windows example:
