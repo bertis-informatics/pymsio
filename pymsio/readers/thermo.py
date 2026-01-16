@@ -6,7 +6,7 @@ import numpy as np
 import numba as nb
 import polars as pl
 from pathlib import Path
-from typing import Sequence, Union, List, Iterator
+from typing import Sequence, Union, List, Iterator, Optional
 
 from pymsio.readers.base import MassSpecFileReader, MassSpecData
 
@@ -24,7 +24,8 @@ def find_thermo_dll_dir() -> Path:
     if env:
         candidates.append(Path(env))
 
-    # candidates.append(Path.home() / ".pymsio" / "thermo_fisher")
+    pkg_dir = Path(__file__).resolve().parents[1]
+    candidates.append(pkg_dir / "dlls" / "thermo_fisher")
     candidates.append(Path.cwd() / "dlls" / "thermo_fisher")
 
     for d in candidates:
@@ -32,12 +33,13 @@ def find_thermo_dll_dir() -> Path:
             return d
 
     raise FileNotFoundError(
-        "Thermo DLLs not found. Please copy required DLLs to one of:\n"
-        f"- {Path.cwd() / "dlls" / "thermo_fisher"}\n"
+        "Thermo DLLs not found. Place the DLLs in one of the following locations:\n"
         f"- <set {ENV_DLL_DIR}>\n"
-        "- ./dlls/thermo_fisher\n"
+        f"- {pkg_dir / "dlls" / "thermo_fisher"} (inside the installed pymsio package)\n"
+        f"- {Path.cwd() / "dlls" / "thermo_fisher"} (relative to your working directory)\n"
         "Required:\n- " + "\n- ".join(REQUIRED_DLLS)
     )
+
 
 try:
     import clr
@@ -45,7 +47,7 @@ try:
     clr.AddReference("System")
     import System
 
-    from pymsio.utils.util import DotNetArrayToNPArray 
+    from pymsio.utils.util import DotNetArrayToNPArray
 
     dll_dir = find_thermo_dll_dir()
 
@@ -89,6 +91,7 @@ def _parse_mono_and_charge(trailer_data):
 
     return mono_mz, charge
 
+
 @nb.njit(cache=True, fastmath=True)
 def fast_process_peaks(mz_arr, int_arr):
 
@@ -125,19 +128,22 @@ def fast_process_peaks(mz_arr, int_arr):
 
     return result
 
+
 class ThermoRawReader(MassSpecFileReader):
     thread_safe = False
 
-    def __init__(self, 
-                filepath: Union[str, Path],
-                num_workers: int = 0,
-                centroided : bool = True,
-                dda: bool = False,):
+    def __init__(
+        self,
+        filepath: Union[str, Path],
+        num_workers: int = 0,
+        centroided: bool = True,
+        dda: bool = False,
+    ):
         if not LOADED_DLL:
             raise ValueError("ERROR DLL import")
-        
+
         super().__init__(filepath, num_workers)
-        
+
         self.centroided = centroided
         self.dda = dda
 
@@ -145,7 +151,7 @@ class ThermoRawReader(MassSpecFileReader):
         self._raw = RawFileReaderAdapter.FileFactory(self.filepath)
         self._raw.SelectInstrument(ThermoFisher.CommonCore.Data.Business.Device.MS, 1)
 
-        self._meta_df: pl.DataFrame | None = None
+        self._meta_df: Optional[pl.DataFrame] = None
 
     def close(self):
         if self._raw is not None:
@@ -155,10 +161,12 @@ class ThermoRawReader(MassSpecFileReader):
     @property
     def acquisition_date(self) -> str:
         return self._raw.CreationDate.ToString("o")
-    
+
     @property
     def num_frames(self) -> int:
-        return self._raw.RunHeaderEx.LastSpectrum - self._raw.RunHeaderEx.FirstSpectrum + 1
+        return (
+            self._raw.RunHeaderEx.LastSpectrum - self._raw.RunHeaderEx.FirstSpectrum + 1
+        )
 
     @property
     def first_scan_number(self) -> int:
@@ -173,8 +181,10 @@ class ThermoRawReader(MassSpecFileReader):
         return System.String.Join(
             " -> ", self._raw.GetAllInstrumentNamesFromInstrumentMethod()
         )
-    
-    def _read_peaks_arrays(self, frame_num: int, prefer_centroid: bool | None = None):
+
+    def _read_peaks_arrays(
+        self, frame_num: int, prefer_centroid: Optional[bool] = None
+    ):
         if prefer_centroid is None:
             prefer_centroid = self.centroided  # 기존 플래그 재사용
 
@@ -192,23 +202,19 @@ class ThermoRawReader(MassSpecFileReader):
             inten_arr = DotNetArrayToNPArray(data.Intensities)
 
         return mz_arr, inten_arr
-    
+
     def get_meta_df(self) -> pl.DataFrame:
         if self._meta_df is not None:
             return self._meta_df
-        
+
         min_frame = self.first_scan_number
         max_frame = self.last_scan_number
 
         rows: list[dict] = []
 
-        for frame_num in trange(
-            min_frame, max_frame + 1, desc="Reading Thermo meta"
-        ):
+        for frame_num in trange(min_frame, max_frame + 1, desc="Reading Thermo meta"):
             scan_stats = self._raw.GetScanStatsForScanNumber(frame_num)
-            scan_event = IScanEventBase(
-                self._raw.GetScanEventForScanNumber(frame_num)
-            )
+            scan_event = IScanEventBase(self._raw.GetScanEventForScanNumber(frame_num))
 
             try:
                 rt = float(scan_stats.StartTime)  # 분 단위
@@ -225,9 +231,7 @@ class ThermoRawReader(MassSpecFileReader):
                 isolation_width = scan_event.GetReaction(0).IsolationWidth
 
                 if self.dda:
-                    trailer_data = self._raw.GetTrailerExtraInformation(
-                        frame_num
-                    )
+                    trailer_data = self._raw.GetTrailerExtraInformation(frame_num)
                     mono_mz, charge = _parse_mono_and_charge(trailer_data)
 
                     if mono_mz is None or mono_mz <= 0:
@@ -245,7 +249,7 @@ class ThermoRawReader(MassSpecFileReader):
                 else:
                     isolation_min_mz = isolation_center - isolation_width / 2.0
                     isolation_max_mz = isolation_center + isolation_width / 2.0
-            
+
             mz_lo = float(scan_stats.LowMass)
             mz_hi = float(scan_stats.HighMass)
 
@@ -277,22 +281,23 @@ class ThermoRawReader(MassSpecFileReader):
 
         self._meta_df = meta_df
         return meta_df
-    
+
     def get_frame(self, frame_num: int) -> np.ndarray:
         mz_arr, inten_arr = self._read_peaks_arrays(frame_num)
         return fast_process_peaks(mz_arr, inten_arr)
-    
+
     def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
         return list(self.iter_frames(frame_nums, desc="Reading Thermo frames"))
-    
-    def iter_frames(self, frame_nums: Sequence[int], desc: str = "Reading Thermo frames"
-                ) -> Iterator[np.ndarray]:
+
+    def iter_frames(
+        self, frame_nums: Sequence[int], desc: str = "Reading Thermo frames"
+    ) -> Iterator[np.ndarray]:
         frame_nums = np.asarray(frame_nums, dtype=np.int32)
 
         for i in trange(len(frame_nums), desc=desc):
             fn = int(frame_nums[i])
             yield self.get_frame(fn)
-    
+
     def load(self) -> MassSpecData:
         meta_df = self.get_meta_df()
 
@@ -315,4 +320,3 @@ class ThermoRawReader(MassSpecFileReader):
                 all_spectra.append(peaks)
 
         return MassSpecData.create(self.run_name, meta_df, all_spectra)
-
