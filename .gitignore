@@ -15,6 +15,8 @@ conda-env/
 # Thermo vendor DLL 폴더 - 폴더는 유지, 내용은 무시
 dlls/thermo_fisher/*
 !dlls/thermo_fisher/.gitkeep
+pymsio/dlls/thermo_fisher/*
+!pymsio/dlls/thermo_fisher/.gitkeep
 
 # 테스트 데이터 무시
 tests/
