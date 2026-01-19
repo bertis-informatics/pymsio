@@ -14,7 +14,7 @@ Both formats are exposed through a common interface.
 ## Requirements
 
 - **OS**: Windows, Linux (macOS not tested)
-- **Python**: **>= 3.9**
+- **Python**: **>= 3.12**
 - **Thermo RAW**: 
    - Requires Thermo Fisher CommonCore DLLs (`ThermoFisher.CommonCore.Data.dll`, `ThermoFisher.CommonCore.RawFileReader.dll`) obtained from the RawFileReader project (https://github.com/thermofisherlsms/RawFileReader). 
    - Linux also needs Mono (use `install_mono.sh`).
