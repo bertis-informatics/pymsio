@@ -68,21 +68,44 @@ Both formats are exposed through a common interface.
    ### Option A — Conda environment
 
    ```bash
-   conda create -n pymsio-env python=3.9 -y
+   conda create -n pymsio-env python=3.12 -y
    conda activate pymsio-env
-   pip install -e .
+   pip install .
    ```
 
-   ### Option B — pip + venv
+   ### Option B — pip + venv (Python 3.12+)
 
-   ```bash
-   python -m venv .venv
-   # Linux/macOS
-   source .venv/bin/activate
-   # Windows PowerShell
-   # .\.venv\Scripts\Activate.ps1
-   pip install -e .
-   ```
+    **Linux/macOS**
+
+    ```bash
+    # Install Python 3.12 (if you don't already have it)
+    # sudo apt update
+    # sudo apt install python3.12 python3.12-venv
+
+    python3.12 -m venv .venv
+    source .venv/bin/activate
+    # python --version
+    pip install .
+    ```
+
+    **Windows PowerShell (with Python Launcher)**
+
+    ```powershell
+    # Install Python 3.12 (if you don't already have it)
+    # py install 3.12
+
+    py -3.12 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    # python --version
+    pip install .
+    ```
+<br>
+
+`pymsio` is available on **PyPI**, so you can also install and use it directly inside your virtual environment with(DLLs download and path setting also required):
+
+```bash
+pip install pymsio
+```
 
 ---
 
