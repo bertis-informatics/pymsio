@@ -14,7 +14,7 @@ Both formats are exposed through a common interface.
 ## Requirements
 
 - **OS**: Windows, Linux (macOS not tested)
-- **Python**: **>= 3.12**
+- **Python**: **>= 3.8**
 - **Thermo RAW**: 
    - Requires Thermo Fisher CommonCore DLLs (`ThermoFisher.CommonCore.Data.dll`, `ThermoFisher.CommonCore.RawFileReader.dll`) obtained from the RawFileReader project (https://github.com/thermofisherlsms/RawFileReader). 
    - Linux also needs Mono (use `install_mono.sh`).
@@ -68,35 +68,32 @@ Both formats are exposed through a common interface.
    ### Option A — Conda environment
 
    ```bash
-   conda create -n pymsio-env python=3.12 -y
+   conda create -n pymsio-env python=3.8 -y
    conda activate pymsio-env
    pip install .
    ```
 
-   ### Option B — pip + venv (Python 3.12+)
+   ### Option B — pip + venv (Python 3.8+)
 
-    **Linux/macOS**
+    > This project declares `requires-python = ">=3.8"`, so you must have **Python 3.8 or newer** installed before creating a venv and running `pip install .`. 
+  
+    **Linux**
 
     ```bash
-    # Install Python 3.12 (if you don't already have it)
-    # sudo apt update
-    # sudo apt install python3.12 python3.12-venv
-
-    python3.12 -m venv .venv
+    # Go to the folder where pyproject.toml is located.
+    python3 -m venv .venv
     source .venv/bin/activate
-    # python --version
+
     pip install .
     ```
 
-    **Windows PowerShell (with Python Launcher)**
+    **Windows PowerShell**
 
     ```powershell
-    # Install Python 3.12 (if you don't already have it)
-    # py install 3.12
-
-    py -3.12 -m venv .venv
+    # Go to the folder where pyproject.toml is located.
+    python -m venv .venv
     .\.venv\Scripts\Activate.ps1
-    # python --version
+
     pip install .
     ```
 <br>
@@ -141,7 +138,7 @@ print(msdata.peak_arr.shape)
 ```python
 frame_nums = meta_df["frame_num"].to_list() # or List[] which has frame numbers
 peak_arr = reader.get_frames(frame_nums)
-print(peak_arr.shape)
+print(len(peak_arr), peak_arr[0].shape)
 ```
 
 ---

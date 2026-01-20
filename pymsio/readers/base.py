@@ -94,17 +94,6 @@ class MassSpecData:
 
         return cls(run_name, meta_df, peak_arr)
 
-    # def compute_z_score(self):
-    #     if self.z_score_arr is None:
-    #         peak_arr = self.peak_arr
-    #         peak_range_arr = self.meta_df.select(
-    #             pl.col("peak_start", "peak_stop")
-    #         ).to_numpy()
-
-    #         # setting z_score
-    #         z_score = compute_z_score(peak_arr, peak_range_arr)
-    #         z_score = torch_norm.cdf(torch.from_numpy(z_score)).numpy()
-    #         self.z_score_arr = z_score
     def compute_z_score(self):
         if self.z_score_arr is None:
             peak_range_arr = self.meta_df.select(pl.col("peak_start", "peak_stop")).to_numpy()

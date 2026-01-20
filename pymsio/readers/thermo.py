@@ -6,7 +6,7 @@ import numpy as np
 import numba as nb
 import polars as pl
 from pathlib import Path
-from typing import Sequence, Union, List, Iterator, Optional
+from typing import Sequence, Union, List, Iterator, Optional, Dict, Any
 
 from pymsio.readers.base import MassSpecFileReader, MassSpecData
 
@@ -25,8 +25,11 @@ def find_thermo_dll_dir() -> Path:
         candidates.append(Path(env))
 
     pkg_dir = Path(__file__).resolve().parents[1]
-    candidates.append(pkg_dir / "dlls" / "thermo_fisher")
-    candidates.append(Path.cwd() / "dlls" / "thermo_fisher")
+    pkg_path = pkg_dir / "dlls" / "thermo_fisher"
+    cwd_path = Path.cwd() / "dlls" / "thermo_fisher"
+
+    candidates.append(pkg_path)
+    candidates.append(cwd_path)
 
     for d in candidates:
         if d and d.is_dir() and all((d / f).exists() for f in REQUIRED_DLLS):
@@ -35,8 +38,8 @@ def find_thermo_dll_dir() -> Path:
     raise FileNotFoundError(
         "Thermo DLLs not found. Place the DLLs in one of the following locations:\n"
         f"- <set {ENV_DLL_DIR}>\n"
-        f"- {pkg_dir / "dlls" / "thermo_fisher"} (inside the installed pymsio package)\n"
-        f"- {Path.cwd() / "dlls" / "thermo_fisher"} (relative to your working directory)\n"
+        f"- {pkg_path} (inside the installed pymsio package)\n"
+        f"- {cwd_path} (relative to your working directory)\n"
         "Required:\n- " + "\n- ".join(REQUIRED_DLLS)
     )
 
@@ -210,7 +213,7 @@ class ThermoRawReader(MassSpecFileReader):
         min_frame = self.first_scan_number
         max_frame = self.last_scan_number
 
-        rows: list[dict] = []
+        rows: List[Dict[str, Any]] = []
 
         for frame_num in trange(min_frame, max_frame + 1, desc="Reading Thermo meta"):
             scan_stats = self._raw.GetScanStatsForScanNumber(frame_num)
