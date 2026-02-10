@@ -1,7 +1,7 @@
 from pathlib import Path
 from pymsio.readers import ReaderFactory 
 
-path = Path("/home/ympark/pymsio_dev/tests/BD20190920_PTRC_TNBCCarboDoc_EB_Proteome_Plex1_F1.mzML.gz")   # or .mzML
+path = Path("/temp/test.raw")   # or .mzML
 
 # 1) Get appropriate reader
 reader = ReaderFactory.get_reader(path)

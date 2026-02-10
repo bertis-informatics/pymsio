@@ -140,15 +140,25 @@ class ThermoRawReader(MassSpecFileReader):
         filepath: Union[str, Path],
         num_workers: int = 0,
         centroided: bool = True,
-        dda: bool = False,
+        # dda: bool = False,
     ):
         if not LOADED_DLL:
             raise ValueError("ERROR DLL import")
 
         super().__init__(filepath, num_workers)
 
+        self._meta_schema = {
+            "frame_num": pl.UInt32,
+            "time_in_seconds": pl.Float32,
+            "ms_level": pl.UInt8,
+            "isolation_min_mz": pl.Float32,
+            "isolation_max_mz": pl.Float32,
+            "mz_lo": pl.Float32,
+            "mz_hi": pl.Float32,
+        }
+
         self.centroided = centroided
-        self.dda = dda
+        # self.dda = dda
 
         self.filepath = str(filepath)
         self._raw = RawFileReaderAdapter.FileFactory(self.filepath)
@@ -220,38 +230,25 @@ class ThermoRawReader(MassSpecFileReader):
             scan_event = IScanEventBase(self._raw.GetScanEventForScanNumber(frame_num))
 
             try:
-                rt = float(scan_stats.StartTime)  # 분 단위
+                rt = float(scan_stats.StartTime)  # minutes
             except AttributeError:
                 rt = float(self._raw.RetentionTimeFromScanNumber(frame_num))
 
             ms_level = int(scan_event.MSOrder)
 
             if ms_level == 1:
-                isolation_min_mz = np.nan
-                isolation_max_mz = np.nan
+                isolation_min_mz = None
+                isolation_max_mz = None
             else:
-                isolation_center = scan_event.GetReaction(0).PrecursorMass
-                isolation_width = scan_event.GetReaction(0).IsolationWidth
+                isolation_center = float(scan_event.GetReaction(0).PrecursorMass)
+                isolation_width  = float(scan_event.GetReaction(0).IsolationWidth)
 
-                if self.dda:
-                    trailer_data = self._raw.GetTrailerExtraInformation(frame_num)
-                    mono_mz, charge = _parse_mono_and_charge(trailer_data)
-
-                    if mono_mz is None or mono_mz <= 0:
-                        mono_mz = isolation_center
-                    if charge is None:
-                        charge = 0
-                else:
-                    mono_mz = isolation_center
-                    charge = 0
-
-                if mono_mz <= 0:
-                    ms_level = 1
-                    isolation_min_mz = np.nan
-                    isolation_max_mz = np.nan
-                else:
+                if isolation_center > 0 and isolation_width > 0:
                     isolation_min_mz = isolation_center - isolation_width / 2.0
                     isolation_max_mz = isolation_center + isolation_width / 2.0
+                else:
+                    isolation_min_mz = None
+                    isolation_max_mz = None
 
             mz_lo = float(scan_stats.LowMass)
             mz_hi = float(scan_stats.HighMass)
@@ -268,18 +265,10 @@ class ThermoRawReader(MassSpecFileReader):
                 }
             )
 
-        meta_df = pl.DataFrame(rows)
-
-        meta_df = meta_df.with_columns(
-            [
-                pl.col("frame_num").cast(pl.UInt32),
-                pl.col("mz_lo").cast(pl.Float32),
-                pl.col("mz_hi").cast(pl.Float32),
-                pl.col("time_in_seconds").cast(pl.Float32),
-                pl.col("ms_level").cast(pl.UInt8),
-                pl.col("isolation_min_mz").cast(pl.Float32),
-                pl.col("isolation_max_mz").cast(pl.Float32),
-            ]
+        meta_df = pl.DataFrame(
+            rows,
+            schema=self._meta_schema,
+            nan_to_null=True, 
         )
 
         self._meta_df = meta_df
