@@ -133,13 +133,25 @@ msdata = reader.load()
 print(msdata.peak_arr.shape)
 ```
 
-#### Read multiple frames
 
-```python
-frame_nums = meta_df["frame_num"].to_list() # or List[] which has frame numbers
-peak_arr = reader.get_frames(frame_nums)
-print(len(peak_arr), peak_arr[0].shape)
+---
+
+## Testing
+
+Run the test suite with [pytest](https://docs.pytest.org/). Pass the file paths via CLI options:
+
+```bash
+# Both readers
+pytest tests/ --raw "path/to/file.raw" --mzml "path/to/file.mzML"
+
+# Thermo RAW only
+pytest tests/ --raw "path/to/file.raw"
+
+# mzML only
+pytest tests/ --mzml "path/to/file.mzML"
 ```
+
+Tests for readers whose file path is not provided will be **automatically skipped**.
 
 ---
 

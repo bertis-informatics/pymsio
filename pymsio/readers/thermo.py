@@ -1,11 +1,11 @@
 import os
-from tqdm import trange
+from tqdm import tqdm
 from pathlib import Path
 
 import numpy as np
-import numba as nb
 import polars as pl
 from pathlib import Path
+from collections import defaultdict
 from typing import Sequence, Union, List, Iterator, Optional, Dict, Any
 
 from pymsio.readers.base import MassSpecFileReader, MassSpecData
@@ -15,6 +15,7 @@ REQUIRED_DLLS = [
     "ThermoFisher.CommonCore.Data.dll",
     "ThermoFisher.CommonCore.RawFileReader.dll",
 ]
+
 
 def find_thermo_dll_dir() -> Path:
     candidates = []
@@ -49,7 +50,7 @@ try:
     clr.AddReference("System")
     import System
 
-    from pymsio.utils.util import DotNetArrayToNPArray
+    from pymsio.readers.utils import DotNetArrayToNPArray
 
     dll_dir = find_thermo_dll_dir()
 
@@ -72,7 +73,7 @@ class ThermoRawReader(MassSpecFileReader):
         self,
         filepath: Union[str, Path],
         num_workers: int = 0,
-        centroided: bool = True,
+        show_progress: bool = False,
     ):
         if not LOADED_DLL:
             raise ValueError("ERROR DLL import")
@@ -89,13 +90,15 @@ class ThermoRawReader(MassSpecFileReader):
             "mz_hi": pl.Float32,
         }
 
-        self.centroided = centroided
-
         self.filepath = str(filepath)
         self._raw = RawFileReaderAdapter.FileFactory(self.filepath)
         self._raw.SelectInstrument(ThermoFisher.CommonCore.Data.Business.Device.MS, 1)
 
+        self.show_progress = show_progress
         self._meta_df: Optional[pl.DataFrame] = None
+
+    def _progress(self, iterable, **kwargs):
+        return tqdm(iterable, **kwargs) if self.show_progress else iterable
 
     def close(self):
         if self._raw is not None:
@@ -126,129 +129,112 @@ class ThermoRawReader(MassSpecFileReader):
             " -> ", self._raw.GetAllInstrumentNamesFromInstrumentMethod()
         )
 
-    def _read_peaks_arrays(
-        self, frame_num: int, prefer_centroid: Optional[bool] = None
-    ):
-        if prefer_centroid is None:
-            prefer_centroid = self.centroided 
-
+    def _read_peaks_arrays(self, frame_num: int) -> np.ndarray:
         is_centroid = self._raw.IsCentroidScanFromScanNumber(frame_num)
 
-        if (not is_centroid) and prefer_centroid:
-            # Scan is profile, but user wanted centroid
-            data = self._raw.GetSimplifiedCentroids(frame_num)  # ISimpleScanAccess
+        if not is_centroid:
+            data = self._raw.GetSimplifiedCentroids(frame_num)
         else:
-            # return data as-is
-            data = self._raw.GetSimplifiedScan(frame_num)  # ISimpleScanAccess
+            data = self._raw.GetSimplifiedScan(frame_num)
 
         mz_arr = DotNetArrayToNPArray(data.Masses)
         inten_arr = DotNetArrayToNPArray(data.Intensities)
 
         if mz_arr is None or len(mz_arr) == 0:
             return np.empty((0, 2), dtype=np.float32)
-        
+
         mask = inten_arr > 0
+        n = np.count_nonzero(mask)
 
-        if not np.all(mask):
-            mz_arr = mz_arr[mask]
-            inten_arr = inten_arr[mask]
+        if n == 0:
+            return np.empty((0, 2), dtype=np.float32)
 
-        result = np.empty((len(mz_arr), 2), dtype=np.float32)
+        result = np.empty((n, 2), dtype=np.float32)
 
-        result[:, 0] = mz_arr
-        result[:, 1] = inten_arr
+        if n == len(mz_arr):
+            result[:, 0] = mz_arr
+            result[:, 1] = inten_arr
+        else:
+            idx = np.flatnonzero(mask)
+            np.take(mz_arr, idx, out=result[:, 0])
+            np.take(inten_arr, idx, out=result[:, 1])
 
         return result
+
+    def _read_scan_meta(self, frame_num: int, cols: Dict[str, list]) -> None:
+        scan_stats = self._raw.GetScanStatsForScanNumber(frame_num)
+        scan_event = IScanEventBase(self._raw.GetScanEventForScanNumber(frame_num))
+
+        try:
+            rt = float(scan_stats.StartTime)  # minutes
+        except AttributeError:
+            rt = float(self._raw.RetentionTimeFromScanNumber(frame_num))
+
+        ms_level = int(scan_event.MSOrder)
+
+        if ms_level == 1:
+            isolation_min_mz = None
+            isolation_max_mz = None
+        else:
+            reaction = scan_event.GetReaction(0)
+            if reaction.PrecursorRangeIsValid:
+                isolation_min_mz = reaction.FirstPrecursorMass
+                isolation_max_mz = reaction.LastPrecursorMass
+            else:
+                isolation_center = float(reaction.PrecursorMass)
+                isolation_width = float(reaction.IsolationWidth)
+                isolation_min_mz = isolation_center - isolation_width / 2.0
+                isolation_max_mz = isolation_min_mz + isolation_width
+
+        cols["frame_num"].append(frame_num)
+        cols["time_in_seconds"].append(rt * 60)
+        cols["ms_level"].append(ms_level)
+        cols["isolation_min_mz"].append(isolation_min_mz)
+        cols["isolation_max_mz"].append(isolation_max_mz)
+        cols["mz_lo"].append(float(scan_stats.LowMass))
+        cols["mz_hi"].append(float(scan_stats.HighMass))
+
+    def _build_meta_df(self, cols: Dict[str, list]) -> pl.DataFrame:
+        meta_df = pl.DataFrame(cols, schema=self._meta_schema, nan_to_null=True)
+        self._meta_df = meta_df
+        return meta_df
 
     def get_meta_df(self) -> pl.DataFrame:
         if self._meta_df is not None:
             return self._meta_df
 
-        min_frame = self.first_scan_number
-        max_frame = self.last_scan_number
+        cols: Dict[str, list] = defaultdict(list)
+        for frame_num in self._progress(
+            range(self.first_scan_number, self.last_scan_number + 1),
+            desc="read meta",
+        ):
+            self._read_scan_meta(frame_num, cols)
 
-        rows: List[Dict[str, Any]] = []
-
-        for frame_num in trange(min_frame, max_frame + 1, desc="Reading Thermo meta"):
-            scan_stats = self._raw.GetScanStatsForScanNumber(frame_num)
-            scan_event = IScanEventBase(self._raw.GetScanEventForScanNumber(frame_num))
-
-            try:
-                rt = float(scan_stats.StartTime)  # minutes
-            except AttributeError:
-                rt = float(self._raw.RetentionTimeFromScanNumber(frame_num))
-
-            ms_level = int(scan_event.MSOrder)
-
-            if ms_level == 1:
-                isolation_min_mz = None
-                isolation_max_mz = None
-            else:
-                reaction = scan_event.GetReaction(0)
-                if reaction.PrecursorRangeIsValid:
-                    isolation_min_mz = reaction.FirstPrecursorMass
-                    isolation_max_mz = reaction.LastPrecursorMass
-                else:
-                    isolation_center = float(reaction.PrecursorMass)
-                    isolation_width  = float(reaction.IsolationWidth)
-                    isolation_min_mz = isolation_center - isolation_width / 2.0
-                    isolation_max_mz = isolation_min_mz + isolation_width / 2.0
-
-            mz_lo = float(scan_stats.LowMass)
-            mz_hi = float(scan_stats.HighMass)
-
-            rows.append(
-                {
-                    "frame_num": frame_num,
-                    "time_in_seconds": rt * 60,
-                    "ms_level": ms_level,
-                    "isolation_min_mz": isolation_min_mz,
-                    "isolation_max_mz": isolation_max_mz,
-                    "mz_lo": mz_lo,
-                    "mz_hi": mz_hi,
-                }
-            )
-
-        meta_df = pl.DataFrame(
-            rows,
-            schema=self._meta_schema,
-            nan_to_null=True, 
-        )
-
-        self._meta_df = meta_df
-        return meta_df
+        return self._build_meta_df(cols)
 
     def get_frame(self, frame_num: int) -> np.ndarray:
         return self._read_peaks_arrays(frame_num)
 
     def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
-        return list(self.iter_frames(frame_nums, desc="Reading Thermo frames"))
+        return list(self.iter_frames(frame_nums))
 
-    def iter_frames(
-        self, frame_nums: Sequence[int], desc: str = "Reading Thermo frames"
-    ) -> Iterator[np.ndarray]:
-        frame_nums = np.asarray(frame_nums, dtype=np.int32)
-
-        for i in trange(len(frame_nums), desc=desc):
-            fn = int(frame_nums[i])
-            yield self.get_frame(fn)
+    def iter_frames(self, frame_nums: Sequence[int]) -> Iterator[np.ndarray]:
+        for fn in self._progress(frame_nums, desc="load spectra"):
+            yield self.get_frame(int(fn))
 
     def load(self) -> MassSpecData:
-        meta_df = self.get_meta_df()
+        scan_range = range(self.first_scan_number, self.last_scan_number + 1)
+        need_meta = self._meta_df is None
 
-        min_frame = int(meta_df["frame_num"].min())
-        max_frame = int(meta_df["frame_num"].max())
-
-        batch_size = 1024 * 10
-        batch_ranges = [
-            (start, min(start + batch_size - 1, max_frame))
-            for start in range(min_frame, max_frame + 1, batch_size)
-        ]
-
+        cols: Dict[str, list] = defaultdict(list) if need_meta else {}
         all_spectra: List[np.ndarray] = []
 
-        for frame_num in trange(min_frame, max_frame + 1, desc="load spectra"):
-            peaks = self.get_frame(frame_num)
-            all_spectra.append(peaks)
+        for fn in self._progress(scan_range, desc="load spectra"):
+            if need_meta:
+                self._read_scan_meta(fn, cols)
+            all_spectra.append(self._read_peaks_arrays(fn))
 
-        return MassSpecData.create(self.run_name, meta_df, all_spectra)
+        if need_meta:
+            self._build_meta_df(cols)
+
+        return MassSpecData.create(self.run_name, self._meta_df, all_spectra)

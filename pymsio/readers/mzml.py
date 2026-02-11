@@ -149,7 +149,7 @@ class MzmlFileReader(MassSpecFileReader):
     def _open_file_handle(self):
         """Open file handle with configurable buffering for both regular and gzipped files."""
         if self._is_gzipped:
-            # 설정 가능한 큰 버퍼로 감싸기 (기본 8MB)
+            # Wrap with a configurable large buffer (default 8MB)
             return io.BufferedReader(
                 gzip.GzipFile(self.file_path, "rb"), buffer_size=self.buffer_size
             )
@@ -536,7 +536,7 @@ class MzmlFileReader(MassSpecFileReader):
                     elem.clear()
                     continue
 
-                # 여기서 딱 한 개 spectrum만 파싱
+                # Parse exactly one spectrum here
                 spectrum_data = self._parse_spectrum_element(elem)
                 elem.clear()
                 parent = getattr(elem, "getparent", lambda: None)()
@@ -555,12 +555,12 @@ class MzmlFileReader(MassSpecFileReader):
                 )
                 return peaks.astype(np.float32, copy=False)
 
-        # 해당 index를 찾지 못한 경우
+        # Index not found
         return np.empty((0, 2), dtype=np.float32)
-    
+
     def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
         return list(self.iter_frames(frame_nums))
-    
+
     def _iter_spectrum_elements(self, f):
         try:
             context = ET.iterparse(f, events=("end",), tag="{*}spectrum")
@@ -588,11 +588,11 @@ class MzmlFileReader(MassSpecFileReader):
         self,
         frame_nums: Sequence[int],
     ) -> Iterator[np.ndarray]:
-        
+
         frame_nums = np.asarray(frame_nums, dtype=np.int64)
         if frame_nums.size == 0:
             return
-            yield  # 형식상 제너레이터
+            yield  # Required to make this a generator
 
         target_set = set(int(x) for x in frame_nums)
         remaining = set(target_set)
@@ -603,7 +603,7 @@ class MzmlFileReader(MassSpecFileReader):
             for spec_elem in self._iter_spectrum_elements(f):
                 spec_idx += 1
 
-                # 최대 타겟을 넘으면 더 볼 필요 없음
+                # No need to continue past the max target
                 if spec_idx > max_target:
                     break
 
