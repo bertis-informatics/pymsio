@@ -30,7 +30,31 @@ Both formats are exposed through a common interface.
    cd pymsio
    ```
 
-2. **Provide the Thermo DLLs** (only needed for Thermo RAW)
+2. **Quick Install (recommended)**
+
+   The install script downloads the Thermo RawFileReader DLLs (with license agreement) and installs pymsio in one step.
+
+   **Windows PowerShell**
+
+   ```powershell
+   .\install.ps1
+   ```
+
+   **Linux / macOS**
+
+   ```bash
+   chmod +x install.sh
+   ./install.sh
+   ```
+
+   > Both scripts accept a `--skip-pip` flag (`-SkipPipInstall` on Windows) to download DLLs only without running `pip install`.
+
+3. **Manual Install**
+
+   <details>
+   <summary>Click to expand manual installation steps</summary>
+
+   #### a. Provide the Thermo DLLs (only needed for Thermo RAW)
 
    - **Linux only**: ensure Mono is installed (required by pythonnet). Use the helper script:
 
@@ -62,40 +86,13 @@ Both formats are exposed through a common interface.
           *(Add the export line to `~/.bashrc` to keep it persistent.)*
         - Copy the DLLs into the folder referenced by the variable.
 
-
-3. **Install pymsio**
-
-   ### Option A — Conda environment
+   #### b. Install pymsio
 
    ```bash
-   conda create -n pymsio-env python=3.8 -y
-   conda activate pymsio-env
    pip install .
    ```
 
-   ### Option B — pip + venv (Python 3.8+)
-
-    > This project declares `requires-python = ">=3.8"`, so you must have **Python 3.8 or newer** installed before creating a venv and running `pip install .`. 
-  
-    **Linux**
-
-    ```bash
-    # Go to the folder where pyproject.toml is located.
-    python3 -m venv .venv
-    source .venv/bin/activate
-
-    pip install .
-    ```
-
-    **Windows PowerShell**
-
-    ```powershell
-    # Go to the folder where pyproject.toml is located.
-    python -m venv .venv
-    .\.venv\Scripts\Activate.ps1
-
-    pip install .
-    ```
+   </details>
 <br>
 
 `pymsio` is available on **PyPI**, so you can also install and use it directly inside your virtual environment with(DLLs download and path setting also required):
