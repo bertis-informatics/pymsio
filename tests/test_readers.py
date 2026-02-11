@@ -5,6 +5,49 @@ import polars as pl
 from pymsio.readers.base import META_SCHEMA
 
 
+# ---------------------------------------------------------------------------
+# Basic import / environment tests (always run, no file needed)
+# ---------------------------------------------------------------------------
+
+
+class TestImports:
+
+    def test_pymsio_import(self):
+        import pymsio.readers
+
+        assert hasattr(pymsio.readers, "ReaderFactory")
+
+    def test_base_module(self):
+        from pymsio.readers.base import MassSpecFileReader, MassSpecData
+
+        assert MassSpecFileReader is not None
+        assert MassSpecData is not None
+
+    def test_mzml_import(self):
+        from pymsio.readers.mzml import MzmlFileReader
+
+        assert MzmlFileReader is not None
+
+    def test_thermo_import(self):
+        from pymsio.readers.thermo import ThermoRawReader
+
+        assert ThermoRawReader is not None
+
+    def test_thermo_dll_loaded(self):
+        from pymsio.readers.thermo import LOADED_DLL
+
+        assert LOADED_DLL, (
+            "Thermo DLLs not loaded. "
+            "Ensure DLLs are in pymsio/dlls/thermo_fisher/ or PYMSIO_THERMO_DLL_DIR is set."
+        )
+
+    def test_reader_factory_supported_extensions(self):
+        from pymsio.readers import ReaderFactory
+
+        assert ".raw" in ReaderFactory.supported_file_extensions
+        assert ".mzml" in ReaderFactory.supported_file_extensions
+
+
 def _validate_meta_df(meta_df: pl.DataFrame) -> None:
     """Common assertions for any reader's meta DataFrame."""
     assert isinstance(meta_df, pl.DataFrame)

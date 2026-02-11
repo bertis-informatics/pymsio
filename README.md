@@ -93,59 +93,19 @@ Both formats are exposed through a common interface.
    ```
 
    </details>
-<br>
-
-`pymsio` is available on **PyPI**, so you can also install and use it directly inside your virtual environment with(DLLs download and path setting also required):
-
-```bash
-pip install pymsio
-```
 
 ---
 
-## Quick Start
+## Quick Test
 
-#### Read a file (Thermo RAW or mzML) via ReaderFactory
-
-```python
-from pathlib import Path
-from pymsio.readers import ReaderFactory 
-
-path = Path("path/to/your/file.raw")   # or .mzML
-
-# 1) Get appropriate reader
-reader = ReaderFactory.get_reader(path)
-
-# 2) Read metadata (Polars DataFrame)
-meta_df = reader.get_meta_df()
-print(meta_df.head())
-
-# 3) Read one frame (np.ndarray, shape (N, 2), [mz, intensity])
-frame_num = int(meta_df.item(0, "frame_num"))
-peaks = reader.get_frame(frame_num)
-print(peaks.shape)
-
-# 4) Load full dataset 
-msdata = reader.load()
-print(msdata.peak_arr.shape)
-```
-
-
----
-
-## Testing
-
-Run the test suite with [pytest](https://docs.pytest.org/). Pass the file paths via CLI options:
+Run the test suite with [pytest](https://docs.pytest.org/):
 
 ```bash
-# Both readers
+# Basic tests (import check, DLL binding check)
+pytest tests/
+
+# With reader tests (provide file paths)
 pytest tests/ --raw "path/to/file.raw" --mzml "path/to/file.mzML"
-
-# Thermo RAW only
-pytest tests/ --raw "path/to/file.raw"
-
-# mzML only
-pytest tests/ --mzml "path/to/file.mzML"
 ```
 
 Tests for readers whose file path is not provided will be **automatically skipped**.
