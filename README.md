@@ -12,8 +12,7 @@ Both formats are exposed through a common interface.
 ---
 
 ## Requirements
-
-- **OS**: Windows, Linux (macOS not tested)
+- **Supported OS**: Windows, Linux 
 - **Python**: **>= 3.8**
 - **Thermo RAW**: 
    - Requires Thermo Fisher CommonCore DLLs (`ThermoFisher.CommonCore.Data.dll`, `ThermoFisher.CommonCore.RawFileReader.dll`) obtained from the RawFileReader project (https://github.com/thermofisherlsms/RawFileReader). 
@@ -46,8 +45,6 @@ Both formats are exposed through a common interface.
    chmod +x install.sh
    ./install.sh
    ```
-
-   > Both scripts accept a `--skip-pip` flag (`-SkipPipInstall` on Windows) to download DLLs only without running `pip install`.
 
 3. **Manual Install**
 
@@ -112,9 +109,8 @@ Tests for readers whose file path is not provided will be **automatically skippe
 
 ---
 
-## Notes
+## License
 
-- If Thermo RAW fails with missing assemblies, double-check that the two DLLs are in:
-  `PYMSIO_THERMO_DLL_DIR` (Environment variable)
-  or
-  `.../{cwd}/dlls/thermo_fisher/`
+This project is licensed under the [Apache License 2.0](LICENSE.txt).
+
+> **Note:** The Thermo RawFileReader DLLs are proprietary and subject to their own [license](https://github.com/thermofisherlsms/RawFileReader/blob/main/License.doc). They are **not** included in this repository.
