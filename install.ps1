@@ -79,6 +79,6 @@ if (-not $SkipPipInstall) {
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  Installation complete!" -ForegroundColor Cyan
+Write-Host "  Pymsio installation complete!" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""

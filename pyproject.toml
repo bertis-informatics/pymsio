@@ -25,6 +25,7 @@ dependencies = [
   "lxml",
   "isal",
   "h5py",
+  "pytest",
 ]
 
 [project.urls]
