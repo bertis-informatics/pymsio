@@ -29,6 +29,7 @@ pymsio/dlls/thermo_fisher/*
 *.mgf
 *.mzXML
 *.bbmz
+*.mzML.gz
 
 # Jupyter
 *.ipynb
