@@ -4,7 +4,7 @@ Focus on the actual bottlenecks: XML parsing, zlib decompression, and peak proce
 """
 
 from pathlib import Path
-from typing import Optional, Union, List, Tuple, Dict, Any
+from typing import Optional, Union, List, Tuple, Dict, Any, Sequence
 import re
 import binascii
 import zlib
@@ -29,7 +29,6 @@ import polars as pl
 from pymsio.readers.base import MassSpecFileReader
 from pymsio.readers.ms_data import MassSpecData, PeakArray, META_SCHEMA
 
-from typing import Sequence
 
 # MS ontology accession codes as constants for faster lookup
 MS_ACCESSIONS = {
