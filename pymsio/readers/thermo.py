@@ -1,14 +1,14 @@
 import os
-from tqdm import tqdm
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 from pathlib import Path
 from collections import defaultdict
-from typing import Sequence, Union, List, Iterator, Optional, Dict, Any
+from typing import Sequence, Union, List, Optional, Dict, Any
 
-from pymsio.readers.base import MassSpecFileReader, MassSpecData
+from pymsio.readers.base import MassSpecFileReader
+from pymsio.readers.ms_data import MassSpecData
 
 ENV_DLL_DIR = "PYMSIO_THERMO_DLL_DIR"
 REQUIRED_DLLS = [
@@ -44,6 +44,9 @@ def find_thermo_dll_dir() -> Path:
     )
 
 
+LOADED_DLL = False
+_DLL_LOAD_ERROR: str = ""
+
 try:
     import clr
 
@@ -62,8 +65,8 @@ try:
     from ThermoFisher.CommonCore.Data.Interfaces import IScanEvent, IScanEventBase
 
     LOADED_DLL = True
-except Exception:
-    LOADED_DLL = False
+except Exception as exc:
+    _DLL_LOAD_ERROR = f"{type(exc).__name__}: {exc}"
 
 
 class ThermoRawReader(MassSpecFileReader):
@@ -76,29 +79,15 @@ class ThermoRawReader(MassSpecFileReader):
         show_progress: bool = False,
     ):
         if not LOADED_DLL:
-            raise ValueError("ERROR DLL import")
+            raise RuntimeError(f"Failed to load Thermo DLLs: {_DLL_LOAD_ERROR}")
 
-        super().__init__(filepath, num_workers)
-
-        self._meta_schema = {
-            "frame_num": pl.UInt32,
-            "time_in_seconds": pl.Float32,
-            "ms_level": pl.UInt8,
-            "isolation_min_mz": pl.Float32,
-            "isolation_max_mz": pl.Float32,
-            "mz_lo": pl.Float32,
-            "mz_hi": pl.Float32,
-        }
+        super().__init__(filepath, num_workers, show_progress)
 
         self.filepath = str(filepath)
         self._raw = RawFileReaderAdapter.FileFactory(self.filepath)
         self._raw.SelectInstrument(ThermoFisher.CommonCore.Data.Business.Device.MS, 1)
 
-        self.show_progress = show_progress
         self._meta_df: Optional[pl.DataFrame] = None
-
-    def _progress(self, iterable, **kwargs):
-        return tqdm(iterable, **kwargs) if self.show_progress else iterable
 
     def close(self):
         if self._raw is not None:
@@ -137,8 +126,8 @@ class ThermoRawReader(MassSpecFileReader):
         else:
             data = self._raw.GetSimplifiedScan(frame_num)
 
-        mz_arr = DotNetArrayToNPArray(data.Masses)
-        inten_arr = DotNetArrayToNPArray(data.Intensities)
+        mz_arr = DotNetArrayToNPArray(data.Masses, dtype=np.float32)
+        inten_arr = DotNetArrayToNPArray(data.Intensities, dtype=np.float32)
 
         if mz_arr is None or len(mz_arr) == 0:
             return np.empty((0, 2), dtype=np.float32)
@@ -149,17 +138,11 @@ class ThermoRawReader(MassSpecFileReader):
         if n == 0:
             return np.empty((0, 2), dtype=np.float32)
 
-        result = np.empty((n, 2), dtype=np.float32)
-
         if n == len(mz_arr):
-            result[:, 0] = mz_arr
-            result[:, 1] = inten_arr
-        else:
-            idx = np.flatnonzero(mask)
-            np.take(mz_arr, idx, out=result[:, 0])
-            np.take(inten_arr, idx, out=result[:, 1])
+            return np.column_stack((mz_arr, inten_arr))
 
-        return result
+        idx = np.flatnonzero(mask)
+        return np.column_stack((mz_arr[idx], inten_arr[idx]))
 
     def _read_scan_meta(self, frame_num: int, cols: Dict[str, list]) -> None:
         scan_stats = self._raw.GetScanStatsForScanNumber(frame_num)
@@ -195,7 +178,7 @@ class ThermoRawReader(MassSpecFileReader):
         cols["mz_hi"].append(float(scan_stats.HighMass))
 
     def _build_meta_df(self, cols: Dict[str, list]) -> pl.DataFrame:
-        meta_df = pl.DataFrame(cols, schema=self._meta_schema, nan_to_null=True)
+        meta_df = pl.DataFrame(cols, schema=self.meta_schema, nan_to_null=True)
         self._meta_df = meta_df
         return meta_df
 
@@ -216,11 +199,10 @@ class ThermoRawReader(MassSpecFileReader):
         return self._read_peaks_arrays(frame_num)
 
     def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
-        return list(self.iter_frames(frame_nums))
-
-    def iter_frames(self, frame_nums: Sequence[int]) -> Iterator[np.ndarray]:
-        for fn in self._progress(frame_nums, desc="load spectra"):
-            yield self.get_frame(int(fn))
+        return [
+            self.get_frame(int(fn))
+            for fn in self._progress(frame_nums, desc="load spectra")
+        ]
 
     def load(self) -> MassSpecData:
         scan_range = range(self.first_scan_number, self.last_scan_number + 1)

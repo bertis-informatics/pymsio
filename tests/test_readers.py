@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import polars as pl
 
-from pymsio.readers.base import META_SCHEMA
+from pymsio.readers.ms_data import META_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -18,7 +18,8 @@ class TestImports:
         assert hasattr(pymsio.readers, "ReaderFactory")
 
     def test_base_module(self):
-        from pymsio.readers.base import MassSpecFileReader, MassSpecData
+        from pymsio.readers.base import MassSpecFileReader
+        from pymsio.readers.ms_data import MassSpecData
 
         assert MassSpecFileReader is not None
         assert MassSpecData is not None

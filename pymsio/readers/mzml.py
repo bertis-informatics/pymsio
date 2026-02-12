@@ -26,9 +26,10 @@ import numpy as np
 import numba as nb
 import polars as pl
 
-from pymsio.readers.base import MassSpecFileReader, MassSpecData, META_SCHEMA
+from pymsio.readers.base import MassSpecFileReader
+from pymsio.readers.ms_data import MassSpecData, META_SCHEMA
 
-from typing import Iterator, Sequence
+from typing import Sequence
 
 # MS ontology accession codes as constants for faster lookup
 MS_ACCESSIONS = {
@@ -137,9 +138,10 @@ class MzmlFileReader(MassSpecFileReader):
         build_index: bool = False,
         index_regex: Optional[str] = None,
         buffer_size_mb: int = 8,  # Configurable buffer size in MB
+        show_progress: bool = False,
     ):
         """Initialize optimized mzML reader."""
-        super().__init__(file_path, num_workers)
+        super().__init__(file_path, num_workers, show_progress)
         self._meta_df: Optional[pl.DataFrame] = None
         self._is_gzipped = self.file_path.suffix.lower() == ".gz"
         self.build_index = build_index  # For compatibility
@@ -330,77 +332,6 @@ class MzmlFileReader(MassSpecFileReader):
             "intensity_array": intensity_array,
         }
 
-    # def _extract_binary_arrays(
-    #     self, spectrum_elem
-    # ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-    #     """Extract and decode binary data arrays from spectrum element with optimized traversal."""
-    #     binary_arrays = []
-
-    #     # Collect binary arrays in first pass
-    #     for elem in spectrum_elem.iter():
-    #         if self._get_local_tag(elem.tag) == "binaryDataArray":
-    #             binary_arrays.append(elem)
-    #             # Early exit when we have enough arrays
-    #             if len(binary_arrays) >= 2:
-    #                 break
-
-    #     if len(binary_arrays) < 2:
-    #         return None, None
-
-    #     mz_array = None
-    #     intensity_array = None
-
-    #     for array_elem in binary_arrays:
-    #         array_type = None
-    #         precision = 32
-    #         compression = None
-    #         binary_elem = None
-
-    #         # Single pass through array element children
-    #         for elem in array_elem.iter():
-    #             tag = self._get_local_tag(elem.tag)
-
-    #             if tag == "cvParam":
-    #                 accession = elem.get("accession")
-    #                 if accession:
-    #                     accession_type = MS_ACCESSIONS.get(accession)
-
-    #                     if accession_type == "mz_array":
-    #                         array_type = "mz"
-    #                     elif accession_type == "intensity_array":
-    #                         array_type = "intensity"
-    #                     elif accession_type == "float32":
-    #                         precision = 32
-    #                     elif accession_type == "float64":
-    #                         precision = 64
-    #                     elif accession_type == "zlib_compression":
-    #                         compression = "zlib"
-
-    #             elif tag == "binary" and binary_elem is None:
-    #                 binary_elem = elem
-
-    #         if array_type is None or binary_elem is None:
-    #             continue
-
-    #         binary_text = binary_elem.text
-    #         if not binary_text or not binary_text.strip():
-    #             continue
-
-    #         decoded_array = binary_decode(binary_text, precision, compression)
-
-    #         # Check if decoding succeeded
-    #         if decoded_array is not None and decoded_array.size > 0:
-    #             if array_type == "mz":
-    #                 mz_array = decoded_array
-    #             elif array_type == "intensity":
-    #                 intensity_array = decoded_array
-
-    #             # Early exit if we have both arrays
-    #             if mz_array is not None and intensity_array is not None:
-    #                 break
-
-    #     return mz_array, intensity_array
-
     def _spec_to_meta(self, spectrum_data: Dict[str, Any]) -> Dict[str, Any]:
         """Convert spectrum data to metadata dictionary."""
         frame = spectrum_data["index"]
@@ -442,7 +373,7 @@ class MzmlFileReader(MassSpecFileReader):
                 context = ET.iterparse(f, events=("end",))
                 use_filter = False
 
-            for event, elem in context:
+            for event, elem in self._progress(context, desc="parse spectra"):
                 # Quick filtering for non-lxml
                 if not use_filter and self._get_local_tag(elem.tag) != "spectrum":
                     elem.clear()
@@ -558,9 +489,6 @@ class MzmlFileReader(MassSpecFileReader):
         # Index not found
         return np.empty((0, 2), dtype=np.float32)
 
-    def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
-        return list(self.iter_frames(frame_nums))
-
     def _iter_spectrum_elements(self, f):
         try:
             context = ET.iterparse(f, events=("end",), tag="{*}spectrum")
@@ -584,26 +512,24 @@ class MzmlFileReader(MassSpecFileReader):
                 except Exception:
                     pass
 
-    def iter_frames(
-        self,
-        frame_nums: Sequence[int],
-    ) -> Iterator[np.ndarray]:
-
+    def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
+        """Single-pass streaming read for multiple frames."""
         frame_nums = np.asarray(frame_nums, dtype=np.int64)
         if frame_nums.size == 0:
-            return
-            yield  # Required to make this a generator
+            return []
 
         target_set = set(int(x) for x in frame_nums)
         remaining = set(target_set)
         max_target = max(target_set)
+        results: List[np.ndarray] = []
 
         with self._open_file_handle() as f:
             spec_idx = -1
-            for spec_elem in self._iter_spectrum_elements(f):
+            for spec_elem in self._progress(
+                self._iter_spectrum_elements(f), desc="load spectra"
+            ):
                 spec_idx += 1
 
-                # No need to continue past the max target
                 if spec_idx > max_target:
                     break
 
@@ -612,14 +538,15 @@ class MzmlFileReader(MassSpecFileReader):
 
                 spectrum_data = self._parse_spectrum_element(spec_elem)
                 if spectrum_data is None:
-                    yield np.empty((0, 2), dtype=np.float32)
+                    results.append(np.empty((0, 2), dtype=np.float32))
                 else:
                     peaks = fast_process_peaks(
                         spectrum_data["mz_array"], spectrum_data["intensity_array"]
                     )
-                    yield peaks.astype(np.float32, copy=False)
+                    results.append(peaks.astype(np.float32, copy=False))
 
-                if spec_idx in remaining:
-                    remaining.remove(spec_idx)
-                    if not remaining:
-                        break
+                remaining.discard(spec_idx)
+                if not remaining:
+                    break
+
+        return results
