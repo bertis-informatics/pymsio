@@ -29,6 +29,7 @@ temp/
 *.mgf
 *.mzXML
 *.bbmz
+*.mzML.gz
 
 # Jupyter
 *.ipynb
