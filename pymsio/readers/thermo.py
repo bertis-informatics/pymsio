@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import Sequence, Union, List, Optional, Dict, Any
 
 from pymsio.readers.base import MassSpecFileReader
-from pymsio.readers.ms_data import MassSpecData
+from pymsio.readers.ms_data import MassSpecData, PeakArray
 
 ENV_DLL_DIR = "PYMSIO_THERMO_DLL_DIR"
 REQUIRED_DLLS = [
@@ -118,7 +118,7 @@ class ThermoRawReader(MassSpecFileReader):
             " -> ", self._raw.GetAllInstrumentNamesFromInstrumentMethod()
         )
 
-    def _read_peaks_arrays(self, frame_num: int) -> np.ndarray:
+    def _read_peaks_arrays(self, frame_num: int) -> PeakArray:
         is_centroid = self._raw.IsCentroidScanFromScanNumber(frame_num)
 
         if not is_centroid:
@@ -130,19 +130,19 @@ class ThermoRawReader(MassSpecFileReader):
         inten_arr = DotNetArrayToNPArray(data.Intensities, dtype=np.float32)
 
         if mz_arr is None or len(mz_arr) == 0:
-            return np.empty((0, 2), dtype=np.float32)
+            return PeakArray.empty()
 
         mask = inten_arr > 0
         n = np.count_nonzero(mask)
 
         if n == 0:
-            return np.empty((0, 2), dtype=np.float32)
+            return PeakArray.empty()
 
         if n == len(mz_arr):
-            return np.column_stack((mz_arr, inten_arr))
+            return PeakArray(mz_arr, inten_arr)
 
         idx = np.flatnonzero(mask)
-        return np.column_stack((mz_arr[idx], inten_arr[idx]))
+        return PeakArray(mz_arr[idx], inten_arr[idx])
 
     def _read_scan_meta(self, frame_num: int, cols: Dict[str, list]) -> None:
         scan_stats = self._raw.GetScanStatsForScanNumber(frame_num)
@@ -195,10 +195,10 @@ class ThermoRawReader(MassSpecFileReader):
 
         return self._build_meta_df(cols)
 
-    def get_frame(self, frame_num: int) -> np.ndarray:
+    def get_frame(self, frame_num: int) -> PeakArray:
         return self._read_peaks_arrays(frame_num)
 
-    def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
+    def get_frames(self, frame_nums: Sequence[int]) -> List[PeakArray]:
         return [
             self.get_frame(int(fn))
             for fn in self._progress(frame_nums, desc="load spectra")
@@ -209,7 +209,7 @@ class ThermoRawReader(MassSpecFileReader):
         need_meta = self._meta_df is None
 
         cols: Dict[str, list] = defaultdict(list) if need_meta else {}
-        all_spectra: List[np.ndarray] = []
+        all_spectra: List[PeakArray] = []
 
         for fn in self._progress(scan_range, desc="load spectra"):
             if need_meta:

@@ -6,7 +6,11 @@ from tqdm import tqdm
 import polars as pl
 import numpy as np
 
-from pymsio.readers.ms_data import MassSpecData, META_SCHEMA  # noqa: F401 (re-export)
+from pymsio.readers.ms_data import (
+    MassSpecData,
+    PeakArray,
+    META_SCHEMA,
+)  # noqa: F401 (re-export)
 
 COMPRESSION_EXTENSIONS = [".gz", ".zip", ".bz2", ".xz", ".7z", ".tar"]
 MS_EXTENSIONS = [".mzml", ".raw", ".d", ".wiff", ".mgf", ".mzdata", ".mz5"]
@@ -71,17 +75,17 @@ class MassSpecFileReader(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_frame(self, frame_num: int) -> np.ndarray:
+    def get_frame(self, frame_num: int) -> PeakArray:
         """
         Returns:
-            np.ndarray: dtype=[('mz', np.float32), ('ab', np.float32)]
+            PeakArray: NamedTuple(mz=np.ndarray[float32], ab=np.ndarray[float32])
         """
         raise NotImplementedError()
 
-    def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
+    def get_frames(self, frame_nums: Sequence[int]) -> List[PeakArray]:
         """
         Returns:
-            List[np.ndarray: dtype=[('mz', np.float32), ('ab', np.float32)]]
+            List[PeakArray]
         """
         return [self.get_frame(fn) for fn in frame_nums]
 

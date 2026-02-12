@@ -27,7 +27,7 @@ import numba as nb
 import polars as pl
 
 from pymsio.readers.base import MassSpecFileReader
-from pymsio.readers.ms_data import MassSpecData, META_SCHEMA
+from pymsio.readers.ms_data import MassSpecData, PeakArray, META_SCHEMA
 
 from typing import Sequence
 
@@ -59,39 +59,37 @@ NUMERIC_WITH_MINUS_PATTERN = re.compile(r"^-?[0-9]+\.?[0-9]*$")
 # Optimized peak processing using Numba JIT compilation
 @nb.njit(cache=True, fastmath=True)
 def fast_process_peaks(mz_arr, int_arr):
+    """Filter peaks with positive intensity. Returns (mz, ab) 1-D float32 arrays."""
 
     if mz_arr is None or int_arr is None:
-        return np.empty((0, 2), dtype=np.float32)
+        return np.empty(0, dtype=np.float32), np.empty(0, dtype=np.float32)
 
-    """Ultra-fast Numba JIT compiled version - very clean and fast code."""
-    # Input validation
     if mz_arr.size == 0 or int_arr.size == 0:
-        return np.empty((0, 2), dtype=np.float32)
+        return np.empty(0, dtype=np.float32), np.empty(0, dtype=np.float32)
 
-    # Handle size mismatch
     min_len = min(mz_arr.size, int_arr.size)
     if min_len == 0:
-        return np.empty((0, 2), dtype=np.float32)
+        return np.empty(0, dtype=np.float32), np.empty(0, dtype=np.float32)
 
-    # Count valid peaks (JIT makes this loop very fast)
+    # Count valid peaks
     valid_count = 0
     for i in range(min_len):
         if int_arr[i] > 0:
             valid_count += 1
 
     if valid_count == 0:
-        return np.empty((0, 2), dtype=np.float32)
+        return np.empty(0, dtype=np.float32), np.empty(0, dtype=np.float32)
 
-    # Extract valid peaks (simple and fast with JIT)
-    result = np.empty((valid_count, 2), dtype=np.float32)
+    mz_out = np.empty(valid_count, dtype=np.float32)
+    ab_out = np.empty(valid_count, dtype=np.float32)
     idx = 0
     for i in range(min_len):
         if int_arr[i] > 0:
-            result[idx, 0] = np.float32(mz_arr[i])
-            result[idx, 1] = np.float32(int_arr[i])
+            mz_out[idx] = np.float32(mz_arr[i])
+            ab_out[idx] = np.float32(int_arr[i])
             idx += 1
 
-    return result
+    return mz_out, ab_out
 
 
 def binary_decode(
@@ -358,9 +356,10 @@ class MzmlFileReader(MassSpecFileReader):
 
     def _parse_spectra(
         self, collect_meta: bool
-    ) -> Tuple[List[np.ndarray], List[Dict[str, Any]]]:
+    ) -> Tuple[List[PeakArray], List[Dict[str, Any]]]:
         """Fast spectrum parsing with minimal overhead using lxml optimizations."""
-        peaks_list, meta_rows = [], []
+        peaks_list: List[PeakArray] = []
+        meta_rows: List[Dict[str, Any]] = []
 
         with self._open_file_handle() as f:
             # Try to use lxml tag filtering for major performance boost
@@ -383,15 +382,15 @@ class MzmlFileReader(MassSpecFileReader):
 
                 if spectrum_data is not None:
                     # Use fast processing
-                    processed_peaks = fast_process_peaks(
+                    mz, ab = fast_process_peaks(
                         spectrum_data["mz_array"], spectrum_data["intensity_array"]
                     )
-                    peaks_list.append(processed_peaks)
+                    peaks_list.append(PeakArray(mz, ab))
 
                     if collect_meta:
                         meta_rows.append(self._spec_to_meta(spectrum_data))
                 else:
-                    peaks_list.append(np.empty((0, 2), dtype=np.float32))
+                    peaks_list.append(PeakArray.empty())
                     if collect_meta:
                         meta_rows.append(self._create_empty_meta(len(peaks_list) - 1))
 
@@ -441,7 +440,7 @@ class MzmlFileReader(MassSpecFileReader):
             run_name=self.run_name, meta_df=self._meta_df, list_of_peaks=peaks_list
         )
 
-    def get_frame(self, frame_num: int) -> np.ndarray:
+    def get_frame(self, frame_num: int) -> PeakArray:
         # """Get peaks for a specific frame number."""
         # raise NotImplementedError(
         #     "get_frame not implemented for streaming reader. Use load() instead."
@@ -478,16 +477,16 @@ class MzmlFileReader(MassSpecFileReader):
                         pass
 
                 if spectrum_data is None:
-                    return np.empty((0, 2), dtype=np.float32)
+                    return PeakArray.empty()
 
-                peaks = fast_process_peaks(
+                mz, ab = fast_process_peaks(
                     spectrum_data["mz_array"],
                     spectrum_data["intensity_array"],
                 )
-                return peaks.astype(np.float32, copy=False)
+                return PeakArray(mz, ab)
 
         # Index not found
-        return np.empty((0, 2), dtype=np.float32)
+        return PeakArray.empty()
 
     def _iter_spectrum_elements(self, f):
         try:
@@ -512,7 +511,7 @@ class MzmlFileReader(MassSpecFileReader):
                 except Exception:
                     pass
 
-    def get_frames(self, frame_nums: Sequence[int]) -> List[np.ndarray]:
+    def get_frames(self, frame_nums: Sequence[int]) -> List[PeakArray]:
         """Single-pass streaming read for multiple frames."""
         frame_nums = np.asarray(frame_nums, dtype=np.int64)
         if frame_nums.size == 0:
@@ -521,7 +520,7 @@ class MzmlFileReader(MassSpecFileReader):
         target_set = set(int(x) for x in frame_nums)
         remaining = set(target_set)
         max_target = max(target_set)
-        results: List[np.ndarray] = []
+        results: List[PeakArray] = []
 
         with self._open_file_handle() as f:
             spec_idx = -1
@@ -538,12 +537,12 @@ class MzmlFileReader(MassSpecFileReader):
 
                 spectrum_data = self._parse_spectrum_element(spec_elem)
                 if spectrum_data is None:
-                    results.append(np.empty((0, 2), dtype=np.float32))
+                    results.append(PeakArray.empty())
                 else:
-                    peaks = fast_process_peaks(
+                    mz, ab = fast_process_peaks(
                         spectrum_data["mz_array"], spectrum_data["intensity_array"]
                     )
-                    results.append(peaks.astype(np.float32, copy=False))
+                    results.append(PeakArray(mz, ab))
 
                 remaining.discard(spec_idx)
                 if not remaining:

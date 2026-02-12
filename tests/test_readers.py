@@ -1,8 +1,7 @@
-import pytest
 import numpy as np
 import polars as pl
 
-from pymsio.readers.ms_data import META_SCHEMA
+from pymsio.readers.ms_data import PeakArray
 
 
 # ---------------------------------------------------------------------------
@@ -61,22 +60,26 @@ def _validate_meta_df(meta_df: pl.DataFrame) -> None:
     assert (meta_df["ms_level"] >= 1).all(), "ms_level should be >= 1"
 
 
-def _validate_peaks(peaks: np.ndarray) -> None:
+def _validate_peaks(peaks: PeakArray) -> None:
     """Common assertions for a single frame's peak array."""
-    assert isinstance(peaks, np.ndarray)
-    assert peaks.dtype == np.float32
-    if peaks.size > 0:
-        assert peaks.ndim == 2
-        assert peaks.shape[1] == 2
+    assert isinstance(peaks, PeakArray)
+    assert peaks.mz.dtype == np.float32
+    assert peaks.ab.dtype == np.float32
+    assert peaks.mz.ndim == 1
+    assert peaks.ab.ndim == 1
+    assert len(peaks.mz) == len(peaks.ab)
 
 
 def _validate_mass_spec_data(ms_data) -> None:
     """Common assertions for MassSpecData returned by load()."""
     assert ms_data is not None
     assert ms_data.meta_df.shape[0] > 0
-    assert ms_data.peak_arr.ndim == 2
-    assert ms_data.peak_arr.shape[1] == 2
-    assert ms_data.peak_arr.dtype == np.float32
+    assert isinstance(ms_data.peaks, PeakArray)
+    assert ms_data.peaks.mz.ndim == 1
+    assert ms_data.peaks.ab.ndim == 1
+    assert ms_data.peaks.mz.dtype == np.float32
+    assert ms_data.peaks.ab.dtype == np.float32
+    assert len(ms_data.peaks) == len(ms_data.peaks.mz)
 
 
 # ---------------------------------------------------------------------------

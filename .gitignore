@@ -19,7 +19,7 @@ pymsio/dlls/thermo_fisher/*
 !pymsio/dlls/thermo_fisher/.gitkeep
 
 
-# 테스트용 대용량 MS 데이터 파일은 웬만하면 제외
+temp/
 *.raw
 *.wiff
 *.wiff.scan
