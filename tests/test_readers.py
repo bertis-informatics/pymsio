@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import polars as pl
 
@@ -143,4 +144,108 @@ class TestThermoReader:
         reader = ThermoRawReader(raw_path)
         ms_data = reader.load()
         _validate_mass_spec_data(ms_data)
+        reader.close()
+
+
+# ---------------------------------------------------------------------------
+# SCIEX WIFF reader tests
+# ---------------------------------------------------------------------------
+
+
+class TestSciexWiffReader:
+
+    def test_dll_loaded(self):
+        from pymsio.readers.sciex import LOADED_DLL
+
+        assert LOADED_DLL, (
+            "SCIEX DLLs not loaded. "
+            "Ensure DLLs are in pymsio/dlls/sciex/ or PYMSIO_SCIEX_DLL_DIR is set."
+        )
+
+    def test_factory_returns_correct_reader(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+        from pymsio.readers.sciex import SciexWiffReader
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        assert isinstance(reader, SciexWiffReader)
+        reader.close()
+
+    def test_get_meta_df(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        meta_df = reader.get_meta_df()
+        _validate_meta_df(meta_df)
+        reader.close()
+
+    def test_ms_levels(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        meta_df = reader.get_meta_df()
+        ms_levels = meta_df["ms_level"].unique().sort().to_list()
+        assert len(ms_levels) > 0
+        assert all(lvl >= 1 for lvl in ms_levels)
+        reader.close()
+
+    def test_mrm_chromatograms(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+        from pymsio.readers.sciex import SciexMRMReader, MRMChromatogram
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        if not isinstance(reader, SciexMRMReader):
+            pytest.skip("Not an MRM file")
+
+        chroms = reader.get_mrm_chromatograms()
+        assert len(chroms) > 0
+
+        for c in chroms:
+            assert isinstance(c, MRMChromatogram)
+            assert len(c.rt) == len(c.intensity)
+            assert len(c.rt) > 0
+            assert c.rt.dtype == np.float32
+            assert c.intensity.dtype == np.float32
+            assert not np.isnan(c.q1_mz)
+            assert not np.isnan(c.q3_mz)
+
+        reader.close()
+
+    def test_dda_get_frame(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+        from pymsio.readers.sciex import SciexMRMReader
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        if isinstance(reader, SciexMRMReader):
+            pytest.skip("MRM file — get_frame() not applicable")
+
+        peaks = reader.get_frame(reader.first_scan_number)
+        _validate_peaks(peaks)
+        reader.close()
+
+    def test_dda_load(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+        from pymsio.readers.sciex import SciexMRMReader
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        if isinstance(reader, SciexMRMReader):
+            pytest.skip("MRM file — load() not applicable")
+
+        ms_data = reader.load()
+        _validate_mass_spec_data(ms_data)
+        reader.close()
+
+    def test_ms2_has_isolation_window(self, wiff_path):
+        from pymsio.readers.factory import ReaderFactory
+        from pymsio.readers.sciex import SciexMRMReader
+
+        reader = ReaderFactory.get_reader(wiff_path)
+        if isinstance(reader, SciexMRMReader):
+            pytest.skip("MRM file — isolation window not applicable")
+
+        meta_df = reader.get_meta_df()
+        ms2 = meta_df.filter(meta_df["ms_level"] == 2)
+        # IDA files have null isolation windows for empty product scans (no precursor selected)
+        ms2_with_iso = ms2.filter(ms2["isolation_min_mz"].is_not_null())
+        if ms2_with_iso.shape[0] > 0:
+            assert (ms2_with_iso["isolation_min_mz"] < ms2_with_iso["isolation_max_mz"]).all()
         reader.close()

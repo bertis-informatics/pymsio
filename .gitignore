@@ -19,9 +19,16 @@ pymsio/dlls/thermo_fisher/*
 !pymsio/dlls/thermo_fisher/.gitkeep
 
 
+dlls/sciex/*
+!dlls/sciex/.gitkeep
+pymsio/dlls/sciex/*
+!pymsio/dlls/sciex/.gitkeep
+
+
 temp/
 *.raw
 *.wiff
+*.wiff.mtd
 *.wiff.scan
 *.d
 *.mzML
@@ -30,6 +37,8 @@ temp/
 *.mzXML
 *.bbmz
 *.mzML.gz
+
+tests/MethodRefineSupplement/
 
 # Jupyter
 *.ipynb
@@ -64,3 +73,5 @@ Thumbs.db
 .env.*
 pat.txt
 pypi_publish.sh
+
+wiff_inspect.py

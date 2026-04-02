@@ -4,10 +4,11 @@ from typing import Union
 from .base import MassSpecFileReader
 from .thermo import ThermoRawReader
 from .mzml import MzmlFileReader
+from .sciex import SciexWiffReader, SciexMRMReader
 
 
 class ReaderFactory:
-    supported_file_extensions = [".raw", ".mzml", ".mzml.gz"]
+    supported_file_extensions = [".raw", ".mzml", ".mzml.gz", ".wiff", ".wiff2"]
 
     @classmethod
     def _normalize_ext(cls, path: Path) -> str:
@@ -36,6 +37,11 @@ class ReaderFactory:
             reader = ThermoRawReader(filepath)
         elif ext in (".mzml", ".mzml.gz"):
             reader = MzmlFileReader(filepath)
+        elif ext in (".wiff", ".wiff2"):
+            # Open once, then promote to SciexMRMReader in-place if MRM
+            reader = SciexWiffReader(filepath)
+            if "MRM" in reader.experiment_type.upper():
+                reader.__class__ = SciexMRMReader
         else:
             raise ValueError(f"Unsupported file type: {ext}")
 
