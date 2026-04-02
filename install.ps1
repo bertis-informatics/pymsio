@@ -146,7 +146,12 @@ if (-not $PwizInstalledDir) {
     }
 
     Write-Host "    Installing ProteoWizard silently (this may take a minute)..." -ForegroundColor Yellow
-    Start-Process -FilePath $InstallerPath -ArgumentList "/S" -Wait -NoNewWindow
+    $ext = [System.IO.Path]::GetExtension($InstallerPath).ToLower()
+    if ($ext -eq ".msi") {
+        Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$InstallerPath`"", "/quiet", "/norestart" -Wait
+    } else {
+        Start-Process -FilePath $InstallerPath -ArgumentList "/S" -Wait -NoNewWindow
+    }
 
     if (Test-Path $PWIZ_BASE_DIR) {
         $latestPwiz = Get-ChildItem -Path $PWIZ_BASE_DIR -Directory | Sort-Object CreationTime -Descending | Select-Object -First 1
