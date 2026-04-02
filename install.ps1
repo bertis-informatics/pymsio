@@ -2,11 +2,11 @@
 .SYNOPSIS
     Installs pymsio, downloads Thermo DLLs, extracts SCIEX DLLs via temporary ProteoWizard install, and cleans up.
 .DESCRIPTION
-    1. Displays the dual Thermo & ProteoWizard/SCIEX License Agreement.
+    1. Displays the Thermo & ProteoWizard/SCIEX License Agreement.
     2. Downloads Thermo Fisher RawFileReader DLLs directly from GitHub.
-    3. Checks for ProteoWizard. If missing, installs it silently.
-    4. Copies the required SCIEX DLLs into the local project folder.
-    5. If ProteoWizard was installed by this script, uninstalls it silently to leave no trace.
+    3. Checks for ProteoWizard. If missing, downloads and installs it silently.
+    4. Copies SCIEX DLLs from ProteoWizard into the project folder.
+    5. If ProteoWizard was installed by this script, uninstalls it to leave no trace.
     6. Installs pymsio via pip.
 #>
 param(
@@ -27,7 +27,7 @@ $THERMO_DLLS = @(
 
 # SCIEX / ProteoWizard
 $PWIZ_LICENSE = "https://proteowizard.sourceforge.io/licenses.html"
-$PWIZ_INSTALLER_URL = "https://teamcity.labkey.org/guestAuth/repository/download/bt83/latest.lastSuccessful/pwiz-setup.exe"
+$PWIZ_DOWNLOAD_PAGE = "https://proteowizard.sourceforge.io/download.html"
 $PWIZ_BASE_DIR = "C:\Program Files\ProteoWizard"
 $SCIEX_REQUIRED = @(
     "Clearcore2.Data.dll",
@@ -47,7 +47,7 @@ Write-Host "============================================================" -Foreg
 Write-Host "  Thermo Fisher & SCIEX/ProteoWizard License Agreement" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "This script will download proprietary vendor libraries required for MS data reading."
+Write-Host "This script will set up proprietary vendor libraries required for MS data reading."
 Write-Host "By proceeding, you agree to the following End User License Agreements (EULAs):"
 Write-Host ""
 Write-Host "  1. Thermo RawFileReader License:" -ForegroundColor Yellow
@@ -76,7 +76,7 @@ foreach ($dll in $THERMO_DLLS) {
     $dest = Join-Path $ThermoDllDir $dll
     Write-Host "    Downloading $dll ..."
     Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-    
+
     if (Test-Path $dest) {
         Write-Host "    OK: $dest" -ForegroundColor DarkGreen
     } else {
@@ -86,18 +86,18 @@ foreach ($dll in $THERMO_DLLS) {
 }
 
 
-# ── 3. Handle SCIEX DLLs (via ProteoWizard) ──────────────────────────────────
+# ── 3. Copy SCIEX DLLs from existing ProteoWizard installation ───────────────
 Write-Host ""
-Write-Host "[*] Phase 2: Extracting SCIEX DLLs..." -ForegroundColor Green
+Write-Host "[*] Phase 2: Copying SCIEX DLLs from ProteoWizard..." -ForegroundColor Green
 
 if (-not (Test-Path $SciexDllDir)) {
     New-Item -ItemType Directory -Path $SciexDllDir -Force | Out-Null
 }
 
+# Find or install ProteoWizard
 $PwizInstalledDir = $null
 $InstalledByScript = $false
 
-# Check if ProteoWizard is already installed
 if (Test-Path $PWIZ_BASE_DIR) {
     $latestPwiz = Get-ChildItem -Path $PWIZ_BASE_DIR -Directory | Sort-Object CreationTime -Descending | Select-Object -First 1
     if ($latestPwiz) {
@@ -106,33 +106,50 @@ if (Test-Path $PWIZ_BASE_DIR) {
     }
 }
 
-# If not installed, download and install silently
 if (-not $PwizInstalledDir) {
     $InstalledByScript = $true
     $InstallerPath = Join-Path $env:TEMP "pwiz-setup.exe"
-    
-    Write-Host "    ProteoWizard not found. Downloading installer..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $PWIZ_INSTALLER_URL -OutFile $InstallerPath -UseBasicParsing
-    
+
+    # Fetch the latest installer URL from the ProteoWizard download page
+    Write-Host "    ProteoWizard not found. Fetching download page..." -ForegroundColor Yellow
+    try {
+        $page = Invoke-WebRequest -Uri $PWIZ_DOWNLOAD_PAGE -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
+        $installerUrl = ($page.Links | Where-Object { $_.href -match "pwiz-setup.*\.exe" } | Select-Object -First 1).href
+        if (-not $installerUrl) {
+            throw "Could not find installer link on download page."
+        }
+        # Make absolute URL if relative
+        if ($installerUrl -notmatch "^https?://") {
+            $installerUrl = "https://proteowizard.sourceforge.io/$installerUrl"
+        }
+    } catch {
+        Write-Host "    WARNING: Could not auto-detect installer URL: $_" -ForegroundColor Yellow
+        Write-Host "    Please download ProteoWizard manually from:" -ForegroundColor Yellow
+        Write-Host "      $PWIZ_DOWNLOAD_PAGE" -ForegroundColor Yellow
+        exit 1
+    }
+
+    Write-Host "    Downloading installer from: $installerUrl" -ForegroundColor Yellow
+    Invoke-WebRequest -Uri $installerUrl -OutFile $InstallerPath -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
+
     Write-Host "    Installing ProteoWizard silently (this may take a minute)..." -ForegroundColor Yellow
     Start-Process -FilePath $InstallerPath -ArgumentList "/S" -Wait -NoNewWindow
-    
-    # Verify installation
+
     if (Test-Path $PWIZ_BASE_DIR) {
         $latestPwiz = Get-ChildItem -Path $PWIZ_BASE_DIR -Directory | Sort-Object CreationTime -Descending | Select-Object -First 1
         $PwizInstalledDir = $latestPwiz.FullName
-        Write-Host "    ProteoWizard successfully installed at: $PwizInstalledDir" -ForegroundColor Cyan
+        Write-Host "    ProteoWizard installed at: $PwizInstalledDir" -ForegroundColor Cyan
     } else {
         Write-Host "    FAILED: ProteoWizard installation could not be verified." -ForegroundColor Red
         exit 1
     }
 }
 
-# Copy SCIEX DLLs by pattern (Clearcore2*.dll, Sciex*.dll, etc.)
+# Copy SCIEX DLLs by pattern
 $copiedCount = 0
 foreach ($pattern in $SCIEX_PATTERNS) {
-    $matches = Get-ChildItem -Path $PwizInstalledDir -Filter $pattern -ErrorAction SilentlyContinue
-    foreach ($file in $matches) {
+    $found = Get-ChildItem -Path $PwizInstalledDir -Filter $pattern -ErrorAction SilentlyContinue
+    foreach ($file in $found) {
         Copy-Item -Path $file.FullName -Destination (Join-Path $SciexDllDir $file.Name) -Force
         Write-Host "    Copied: $($file.Name)" -ForegroundColor DarkGreen
         $copiedCount++
@@ -148,21 +165,18 @@ foreach ($dll in $SCIEX_REQUIRED) {
 }
 Write-Host "    Total SCIEX DLLs copied: $copiedCount" -ForegroundColor Cyan
 
-# ── 4. Cleanup ProteoWizard (If installed by this script) ────────────────────
+
+# ── 4. Cleanup ProteoWizard (if installed by this script) ────────────────────
 if ($InstalledByScript) {
     Write-Host ""
     Write-Host "[*] Phase 3: Cleaning up temporary ProteoWizard installation..." -ForegroundColor Green
-    
-    # Locate the uninstaller (usually unins000.exe)
-    $Uninstaller = Get-ChildItem -Path $PwizInstalledDir -Filter "unins*.exe" | Select-Object -First 1
-    
+
+    $Uninstaller = Get-ChildItem -Path $PwizInstalledDir -Filter "unins*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($Uninstaller) {
         Write-Host "    Running uninstaller silently..." -ForegroundColor Yellow
         Start-Process -FilePath $Uninstaller.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -NoNewWindow
-        
-        # Give it a brief moment to finish file deletions
-        Start-Sleep -Seconds 3 
-        Write-Host "    Uninstallation complete. Temporary files removed." -ForegroundColor Cyan
+        Start-Sleep -Seconds 3
+        Write-Host "    Uninstallation complete." -ForegroundColor Cyan
     } else {
         Write-Host "    WARNING: Could not find ProteoWizard uninstaller. Manual cleanup may be required." -ForegroundColor Yellow
     }
