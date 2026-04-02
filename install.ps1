@@ -73,6 +73,10 @@ if (Test-Path $PWIZ_BASE_DIR) {
     if ($latestPwiz) {
         $PwizInstalledDir = $latestPwiz.FullName
         Write-Host "    Found existing ProteoWizard at: $PwizInstalledDir" -ForegroundColor Cyan
+        $removeExisting = Read-Host "    Remove ProteoWizard after copying DLLs? [y/N]"
+        if ($removeExisting -in @("y", "Y", "yes", "Yes", "YES")) {
+            $InstalledByScript = $true
+        }
     }
 }
 
