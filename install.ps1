@@ -117,7 +117,16 @@ if (-not $PwizInstalledDir) {
     Write-Host "    ProteoWizard not found. Trying automatic download (v$PWIZ_VERSION)..." -ForegroundColor Yellow
     try {
         Invoke-WebRequest -Uri $PWIZ_INSTALLER_URL -OutFile $InstallerPath -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
-        if (Test-Path $InstallerPath) { $downloadSuccess = $true }
+        # Verify it's a valid Windows executable (PE magic bytes: 4D 5A = "MZ")
+        if (Test-Path $InstallerPath) {
+            $bytes = [System.IO.File]::ReadAllBytes($InstallerPath)
+            if ($bytes.Length -gt 100MB -and $bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
+                $downloadSuccess = $true
+            } else {
+                Write-Host "    Downloaded file is not a valid executable (may be an HTML redirect page)." -ForegroundColor Yellow
+                Remove-Item $InstallerPath -Force
+            }
+        }
     } catch {
         Write-Host "    Auto-download failed: $_" -ForegroundColor Yellow
     }
