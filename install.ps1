@@ -28,6 +28,8 @@ $THERMO_DLLS = @(
 # SCIEX / ProteoWizard
 $PWIZ_LICENSE = "https://proteowizard.sourceforge.io/licenses.html"
 $PWIZ_DOWNLOAD_PAGE = "https://proteowizard.sourceforge.io/download.html"
+$PWIZ_VERSION = "3.0.25011"
+$PWIZ_INSTALLER_URL = "https://downloads.sourceforge.net/project/proteowizard/ProteoWizard/${PWIZ_VERSION}/pwiz-setup-${PWIZ_VERSION}-x86_64.exe"
 $PWIZ_BASE_DIR = "C:\Program Files\ProteoWizard"
 $SCIEX_REQUIRED = @(
     "Clearcore2.Data.dll",
@@ -110,27 +112,29 @@ if (-not $PwizInstalledDir) {
     $InstalledByScript = $true
     $InstallerPath = Join-Path $env:TEMP "pwiz-setup.exe"
 
-    # Fetch the latest installer URL from the ProteoWizard download page
-    Write-Host "    ProteoWizard not found. Fetching download page..." -ForegroundColor Yellow
+    # Step A: Try hardcoded URL first
+    $downloadSuccess = $false
+    Write-Host "    ProteoWizard not found. Trying automatic download (v$PWIZ_VERSION)..." -ForegroundColor Yellow
     try {
-        $page = Invoke-WebRequest -Uri $PWIZ_DOWNLOAD_PAGE -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
-        $installerUrl = ($page.Links | Where-Object { $_.href -match "pwiz-setup.*\.exe" } | Select-Object -First 1).href
-        if (-not $installerUrl) {
-            throw "Could not find installer link on download page."
-        }
-        # Make absolute URL if relative
-        if ($installerUrl -notmatch "^https?://") {
-            $installerUrl = "https://proteowizard.sourceforge.io/$installerUrl"
-        }
+        Invoke-WebRequest -Uri $PWIZ_INSTALLER_URL -OutFile $InstallerPath -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
+        if (Test-Path $InstallerPath) { $downloadSuccess = $true }
     } catch {
-        Write-Host "    WARNING: Could not auto-detect installer URL: $_" -ForegroundColor Yellow
-        Write-Host "    Please download ProteoWizard manually from:" -ForegroundColor Yellow
-        Write-Host "      $PWIZ_DOWNLOAD_PAGE" -ForegroundColor Yellow
-        exit 1
+        Write-Host "    Auto-download failed: $_" -ForegroundColor Yellow
     }
 
-    Write-Host "    Downloading installer from: $installerUrl" -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $installerUrl -OutFile $InstallerPath -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
+    # Step B: Fallback — ask user for local installer path
+    if (-not $downloadSuccess) {
+        Write-Host ""
+        Write-Host "    Automatic download failed. Please download ProteoWizard manually:" -ForegroundColor Yellow
+        Write-Host "      $PWIZ_DOWNLOAD_PAGE" -ForegroundColor Cyan
+        Write-Host ""
+        $userPath = Read-Host "    Enter the full path to the downloaded pwiz-setup.exe (or press Enter to abort)"
+        if (-not $userPath -or -not (Test-Path $userPath)) {
+            Write-Host "    Aborting: no valid installer path provided." -ForegroundColor Red
+            exit 1
+        }
+        $InstallerPath = $userPath
+    }
 
     Write-Host "    Installing ProteoWizard silently (this may take a minute)..." -ForegroundColor Yellow
     Start-Process -FilePath $InstallerPath -ArgumentList "/S" -Wait -NoNewWindow
