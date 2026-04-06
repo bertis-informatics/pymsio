@@ -1,15 +1,16 @@
 <#
 .SYNOPSIS
-    Installs pymsio, downloads Thermo DLLs, extracts SCIEX DLLs via ProteoWizard (.msi), and cleans up.
+    Installs pymsio, downloads Thermo DLLs, and extracts SCIEX DLLs via ProteoWizard.
 .DESCRIPTION
     1. Displays the dual Thermo & ProteoWizard/SCIEX License Agreement.
     2. Downloads Thermo Fisher RawFileReader DLLs directly from GitHub.
     3. Handles SCIEX DLLs:
-       - Tries to download ProteoWizard from a known static SourceForge mirror URL.
-       - If it fails, prompts the user *mid-script* to provide a local installer path.
-    4. Copies all required SCIEX DLLs using pattern matching (Clearcore2*.dll, Sciex*.dll).
-    5. Uninstalls ProteoWizard silently by reading the Registry (avoiding slow Win32_Product).
-    6. Installs pymsio via pip.
+       - Uses existing ProteoWizard installation if found.
+       - Otherwise tries to download ProteoWizard automatically.
+       - If auto-download fails, prompts the user mid-script to provide a local installer path.
+    4. Copies all SCIEX DLLs using pattern matching (Clearcore2*.dll, Sciex*.dll, etc.).
+       ProteoWizard is NOT removed after copying.
+    5. Installs pymsio via pip.
 #>
 param(
     [switch]$SkipPipInstall
@@ -65,7 +66,6 @@ Write-Host "`n[*] Phase 2: Extracting SCIEX DLLs..." -ForegroundColor Green
 if (-not (Test-Path $SciexDllDir)) { New-Item -ItemType Directory -Path $SciexDllDir -Force | Out-Null }
 
 $PwizInstalledDir = $null
-$InstalledByScript = $false
 
 # Search for existing installation
 if (Test-Path $PWIZ_BASE_DIR) {
@@ -73,15 +73,10 @@ if (Test-Path $PWIZ_BASE_DIR) {
     if ($latestPwiz) {
         $PwizInstalledDir = $latestPwiz.FullName
         Write-Host "    Found existing ProteoWizard at: $PwizInstalledDir" -ForegroundColor Cyan
-        $removeExisting = Read-Host "    Remove ProteoWizard after copying DLLs? [y/N]"
-        if ($removeExisting -in @("y", "Y", "yes", "Yes", "YES")) {
-            $InstalledByScript = $true
-        }
     }
 }
 
 if (-not $PwizInstalledDir) {
-    $InstalledByScript = $true
     $InstallerPath = Join-Path $env:TEMP "pwiz-setup.exe"
     $DownloadSuccess = $false
 
@@ -158,38 +153,14 @@ foreach ($dll in $SCIEX_REQUIRED) {
 }
 Write-Host "    Total SCIEX DLLs copied: $copiedCount" -ForegroundColor Cyan
 
-# ── 4. Phase 3: Cleanup via Registry ────────────────────────────────────────
-if ($InstalledByScript) {
-    Write-Host "`n[*] Phase 3: Cleaning up temporary ProteoWizard installation..." -ForegroundColor Green
-
-    $RegPaths = @(
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )
-    $PwizReg = Get-ItemProperty $RegPaths -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -match "ProteoWizard" } |
-        Select-Object -First 1
-
-    if ($PwizReg) {
-        if ($PwizReg.PSChildName -match "^\{.*\}$") {
-            Start-Process msiexec.exe -ArgumentList "/x", $PwizReg.PSChildName, "/qn", "/norestart" -Wait
-        } elseif ($PwizReg.QuietUninstallString) {
-            Start-Process cmd.exe -ArgumentList "/c", $PwizReg.QuietUninstallString -Wait -WindowStyle Hidden
-        }
-        Write-Host "    Temporary ProteoWizard removed." -ForegroundColor Cyan
-    } else {
-        Write-Host "    Could not find uninstaller in Registry. Cleanup skipped." -ForegroundColor Yellow
-    }
-}
-
-# ── 5. Phase 4: pip install ─────────────────────────────────────────────────
+# ── 4. Phase 3: pip install ─────────────────────────────────────────────────
 if (-not $SkipPipInstall) {
-    Write-Host "`n[*] Phase 4: Installing pymsio..." -ForegroundColor Green
+    Write-Host "`n[*] Phase 3: Installing pymsio..." -ForegroundColor Green
     Push-Location $ScriptDir
     pip install .
     Pop-Location
 } else {
-    Write-Host "`n[*] Phase 4: Skipping pip install (use 'pip install .' manually)." -ForegroundColor Yellow
+    Write-Host "`n[*] Phase 3: Skipping pip install (use 'pip install .' manually)." -ForegroundColor Yellow
 }
 
 Write-Host "`n============================================================" -ForegroundColor Cyan
